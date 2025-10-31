@@ -1,0 +1,205 @@
+*** Update File: FE/src/pages/admin/AdminFoods.jsx
+@@
+-                  <tbody>
+-                    {options.map((option) => {
+-                      const isEditing = editingOption?.option_id === option.option_id
+-                      return (
+-                        <tr key={option.option_id}>
+-                          <td>((?s).*?)</td>
+-                        </tr>
+-                      )
+-                    })}
+-                    {!options.length && (
+-                      <tr>
+-                        <td colSpan={6} className="text-center text-muted py-4">
+-                          Chua co tuy chon nao cho mon an nay.
+-                        </td>
+-                      </tr>
+-                    )}
+-                  </tbody>
++                  <tbody>
++                    {optionsLoading ? (
++                      <tr>
++                        <td colSpan={7} className="text-center py-4">
++                          <Spinner label="Dang tai danh sach tuy chon..." />
++                        </td>
++                      </tr>
++                    ) : options.length ? (
++                      options.map((option) => {
++                        const isEditing = editingOption?.option_id === option.option_id
++                        const rowClass = option.is_active ? '' : 'table-warning-subtle'
++                        return (
++                          <tr key={option.option_id} className={rowClass}>
++                            <td style={{ minWidth: '14rem' }}>
++                              {isEditing ? (
++                                <input
++                                  type="text"
++                                  className="form-control"
++                                  value={editingOption.group_name}
++                                  onChange={(event) =>
++                                    setEditingOption((prev) => ({ ...prev, group_name: event.target.value }))
++                                  }
++                                  required
++                                />
++                              ) : (
++                                <span className="fw-semibold">{option.group_name}</span>
++                              )}
++                            </td>
++                            <td style={{ minWidth: '12rem' }}>
++                              {isEditing ? (
++                                <input
++                                  type="text"
++                                  className="form-control"
++                                  value={editingOption.option_name}
++                                  onChange={(event) =>
++                                    setEditingOption((prev) => ({ ...prev, option_name: event.target.value }))
++                                  }
++                                  required
++                                />
++                              ) : (
++                                <span>{option.option_name}</span>
++                              )}
++                            </td>
++                            <td style={{ width: '10rem' }}>
++                              {isEditing ? (
++                                <input
++                                  type="number"
++                                  className="form-control"
++                                  value={editingOption.price_adjustment}
++                                  step="1000"
++                                  onChange={(event) =>
++                                    setEditingOption((prev) => ({
++                                      ...prev,
++                                      price_adjustment: event.target.value
++                                    }))
++                                  }
++                                />
++                              ) : (
++                                <span>{formatCurrency(option.price_adjustment || 0)}</span>
++                              )}
++                            </td>
++                            <td>
++                              {isEditing ? (
++                                <div className="form-check form-switch">
++                                  <input
++                                    type="checkbox"
++                                    className="form-check-input"
++                                    checked={Boolean(editingOption.is_required)}
++                                    onChange={(event) =>
++                                      setEditingOption((prev) => ({
++                                        ...prev,
++                                        is_required: event.target.checked
++                                      }))
++                                    }
++                                  />
++                                </div>
++                              ) : (
++                                <span
++                                  className={`badge rounded-pill px-3 py-2 ${
++                                    option.is_required ? 'bg-danger-subtle text-danger' : 'bg-light text-muted border'
++                                  }`}
++                                >
++                                  {option.is_required ? 'Bat buoc' : 'Tuy chon'}
++                                </span>
++                              )}
++                            </td>
++                            <td>
++                              {isEditing ? (
++                                <div className="d-flex gap-2">
++                                  <input
++                                    type="number"
++                                    className="form-control"
++                                    value={editingOption.min_select || ''}
++                                    placeholder="Min"
++                                    onChange={(event) =>
++                                      setEditingOption((prev) => ({
++                                        ...prev,
++                                        min_select: event.target.value
++                                      }))
++                                    }
++                                  />
++                                  <input
++                                    type="number"
++                                    className="form-control"
++                                    value={editingOption.max_select || ''}
++                                    placeholder="Max"
++                                    onChange={(event) =>
++                                      setEditingOption((prev) => ({
++                                        ...prev,
++                                        max_select: event.target.value
++                                      }))
++                                    }
++                                  />
++                                </div>
++                              ) : (
++                                <span className="text-muted small">
++                                  {option.min_select ?? 0} - {option.max_select ?? 'Khong gioi han'}
++                                </span>
++                              )}
++                            </td>
++                            <td>
++                              <span
++                                className={`badge rounded-pill px-3 py-2 ${
++                                  option.is_active
++                                    ? 'bg-success-subtle text-success'
++                                    : 'bg-secondary-subtle text-secondary'
++                                }`}
++                              >
++                                {option.is_active ? 'Dang su dung' : 'Tam dung'}
++                              </span>
++                            </td>
++                            <td className="text-end" style={{ width: '18rem' }}>
++                              {isEditing ? (
++                                <div className="d-flex gap-2 justify-content-end">
++                                  <button type="button" className="btn btn-sm btn-success" onClick={handleOptionUpdate}>
++                                    Luu
++                                  </button>
++                                  <button
++                                    type="button"
++                                    className="btn btn-sm btn-outline-secondary"
++                                    onClick={() => setEditingOption(null)}
++                                  >
++                                    Huy
++                                  </button>
++                                </div>
++                              ) : (
++                                <div className="d-flex gap-2 justify-content-end">
++                                  <button
++                                    type="button"
++                                    className="btn btn-sm btn-outline-primary"
++                                    onClick={() => setEditingOption(option)}
++                                  >
++                                    Chinh sua
++                                  </button>
++                                  <button
++                                    type="button"
++                                    className="btn btn-sm btn-outline-warning"
++                                    onClick={() => handleOptionAvailabilityToggle(option)}
++                                  >
++                                    {option.is_active ? 'Tam dung' : 'Mo lai'}
++                                  </button>
++                                  <button
++                                    type="button"
++                                    className="btn btn-sm btn-outline-danger"
++                                    onClick={() => handleOptionDelete(option.option_id)}
++                                  >
++                                    Xoa
++                                  </button>
++                                </div>
++                              )}
++                            </td>
++                          </tr>
++                        )
++                      })
++                    ) : (
++                      <tr>
++                        <td colSpan={7} className="text-center text-muted py-4">
++                          {selectedProductId
++                            ? 'Chua co tuy chon nao cho mon an nay.'
++                            : 'Hay chon mot mon an de xem tuy chon.'}
++                        </td>
++                      </tr>
++                    )}
++                  </tbody>
+*** End Patch
+
