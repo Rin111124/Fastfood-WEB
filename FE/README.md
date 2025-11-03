@@ -1,6 +1,6 @@
 # QuickBite Frontend
 
-Vite + React SPA for the FatFood platform. The UI now mirrors a modern admin/staff dashboard experience (inspired by DashStack) and consumes JSON APIs exposed by `../FatFood`.
+Vite + React SPA for the FatFood platform. The UI mirrors a modern admin/staff dashboard and consumes the JSON APIs exposed by `../FatFood`.
 
 ## Getting started
 
@@ -20,12 +20,32 @@ You can tweak the request timeout with `VITE_API_TIMEOUT_MS`.
 
 ## Highlights
 
-- Role-based dashboards (admin/staff) with responsive cards, charts (Chart.js), and live order/inventory listings.
+- Role-based dashboards (admin/staff) with responsive cards, charts (Chart.js), and live listings.
 - Shared `apiFetch` wrapper injects JWT tokens persisted via `lib/session`.
-- Bootstrap 5 + custom gradients/“glass” cards for a DashStack-style look & feel.
+- Bootstrap 5 plus custom gradients/glassmorphism cards for a DashStack-inspired look & feel.
 
 ## Scripts
 
 - `npm run dev` – start the Vite dev server.
 - `npm run build` – production build (code-splits charts/components).
 - `npm run preview` – preview the production build locally.
+- `npm run lint` – run ESLint. On Windows PowerShell you may hit execution-policy blocks; run the command from **Command Prompt** (`cmd.exe`) or relax the execution policy for your user profile.
+
+## Running the whole stack
+
+1. Install dependencies for both projects:
+   ```bash
+   cd FatFood
+   npm install
+   cd ../FE
+   npm install
+   ```
+2. Start the backend API (from `FatFood/`):
+   ```bash
+   npm run dev
+   ```
+3. Start the frontend (from `FE/`):
+   ```bash
+   npm run dev
+   ```
+4. Visit http://localhost:5173. The frontend reads `VITE_API_BASE_URL` to communicate with the backend.

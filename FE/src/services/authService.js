@@ -18,6 +18,7 @@ const parseJsonSafely = async (response) => {
   try {
     return await response.json()
   } catch (error) {
+    console.error('Failed to parse JSON response', error)
     return null
   }
 }
@@ -59,6 +60,7 @@ export const login = async ({ username, password }) => {
       body: JSON.stringify(payload),
     })
   } catch (networkError) {
+    console.error('Login request failed', networkError)
     throw new Error('Cannot reach the QuickBite API. Please check your network connection.')
   }
 
@@ -153,6 +155,7 @@ export const signup = async ({ username, password, fullName, email, phoneNumber,
       }),
     })
   } catch (networkError) {
+    console.error('Signup request failed', networkError)
     throw new Error('Cannot reach the QuickBite API. Please check your network connection.')
   }
 

@@ -8,6 +8,7 @@ const ADMIN_LINKS = [
   { to: '/admin/foods', icon: 'bi-egg-fried', label: 'Mon an & Danh muc' },
   { to: '/admin/orders', icon: 'bi-receipt-cutoff', label: 'Don hang' },
   { to: '/admin/promotions', icon: 'bi-ticket-perforated', label: 'Khuyen mai' },
+  { to: '/admin/news', icon: 'bi-newspaper', label: 'Tin tuc' },
   { to: '/admin/reports', icon: 'bi-bar-chart-line', label: 'Thong ke & Bao cao' },
   { to: '/admin/inventory', icon: 'bi-box-seam', label: 'Ton kho' },
   { to: '/admin/shifts', icon: 'bi-calendar-week', label: 'Lich lam viec' },

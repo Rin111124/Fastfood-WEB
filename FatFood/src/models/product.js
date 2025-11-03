@@ -12,6 +12,8 @@ module.exports = (sequelize, DataTypes) => {
     },
     price: { type: DataTypes.DECIMAL(12,2), allowNull:false, validate:{ min:0 } },
     image_url: DataTypes.STRING(500),
+    image_data: DataTypes.BLOB('long'),
+    image_mime: DataTypes.STRING(100),
     is_active: { type: DataTypes.BOOLEAN, defaultValue:true },
     category_id: DataTypes.INTEGER.UNSIGNED
   }, {

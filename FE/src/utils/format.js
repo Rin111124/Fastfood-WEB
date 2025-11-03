@@ -17,6 +17,7 @@ export const formatMonthLabel = (value) => {
     const parsed = parseISO(`${value}-01`)
     return format(parsed, 'MMM yyyy')
   } catch (error) {
+    console.error('formatMonthLabel failed', error)
     return value
   }
 }
@@ -25,6 +26,7 @@ export const formatDateTime = (value) => {
   try {
     return format(new Date(value), 'dd/MM/yyyy HH:mm')
   } catch (error) {
+    console.error('formatDateTime failed', error)
     return value
   }
 }
@@ -33,6 +35,7 @@ export const formatDate = (value) => {
   try {
     return format(new Date(value), 'dd/MM/yyyy')
   } catch (error) {
+    console.error('formatDate failed', error)
     return value
   }
 }
@@ -41,6 +44,7 @@ export const formatTime = (value) => {
   try {
     return format(new Date(`1970-01-01T${value}`), 'HH:mm')
   } catch (error) {
+    console.error('formatTime failed', error)
     return value
   }
 }

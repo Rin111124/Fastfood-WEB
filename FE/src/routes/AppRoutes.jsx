@@ -1,65 +1,76 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import Login from '../components/Auth/Login'
 import Signup from '../components/Auth/Signup'
-import Dashboard from '../components/Dashboard'
 import ProtectedRoute from '../components/ProtectedRoute'
+import Dashboard from '../components/Dashboard'
 import AdminLayout from '../layouts/AdminLayout'
 import StaffLayout from '../layouts/StaffLayout'
-import Landing from '../pages/Landing'
-import CustomerLanding from '../pages/customer/CustomerLanding'
-import AdminDashboard from '../pages/admin/AdminDashboard'
-import AdminUsers from '../pages/admin/AdminUsers'
-import AdminFoods from '../pages/admin/AdminFoods'
-import AdminOrders from '../pages/admin/AdminOrders'
-import AdminPromotions from '../pages/admin/AdminPromotions'
-import AdminReports from '../pages/admin/AdminReports'
-import AdminSettings from '../pages/admin/AdminSettings'
-import AdminInventory from '../pages/admin/AdminInventory'
-import AdminLogs from '../pages/admin/AdminLogs'
-import AdminShifts from '../pages/admin/AdminShifts'
-import StaffDashboard from '../pages/staff/StaffDashboard'
-import StaffOrders from '../pages/staff/StaffOrders'
-import StaffMenu from '../pages/staff/StaffMenu'
-import StaffSupport from '../pages/staff/StaffSupport'
-import StaffInventory from '../pages/staff/StaffInventory'
-import StaffPerformance from '../pages/staff/StaffPerformance'
-import StaffShifts from '../pages/staff/StaffShifts'
+import LandingPage from '../components/LandingPage'
+import Landing from '../features/public/pages/Landing'
+import MenuPage from '../components/Menupage'
+import ProductDetailPage from '../components/ProductDetailPage'
+import CustomerLanding from '../features/customer/pages/CustomerLanding'
+import AdminDashboard from '../features/admin/pages/AdminDashboard'
+import AdminUsers from '../features/admin/pages/AdminUsers'
+import AdminFoods from '../features/admin/pages/AdminFoods'
+import AdminOrders from '../features/admin/pages/AdminOrders'
+import AdminPromotions from '../features/admin/pages/AdminPromotions'
+import AdminReports from '../features/admin/pages/AdminReports'
+import AdminSettings from '../features/admin/pages/AdminSettings'
+import AdminInventory from '../features/admin/pages/AdminInventory'
+import AdminLogs from '../features/admin/pages/AdminLogs'
+import AdminShifts from '../features/admin/pages/AdminShifts'
+import AdminNews from '../features/admin/pages/AdminNews'
+import StaffDashboard from '../features/staff/pages/StaffDashboard'
+import StaffOrders from '../features/staff/pages/StaffOrders'
+import StaffMenu from '../features/staff/pages/StaffMenu'
+import StaffSupport from '../features/staff/pages/StaffSupport'
+import StaffInventory from '../features/staff/pages/StaffInventory'
+import StaffPerformance from '../features/staff/pages/StaffPerformance'
+import StaffShifts from '../features/staff/pages/StaffShifts'
 
 const AppRoutes = () => (
   <Routes>
-    <Route path="/" element={<CustomerLanding />} />
+    <Route path="/" element={<LandingPage />} />
+    <Route path="/landing" element={<Landing />} />
+    <Route path="/menu" element={<MenuPage />} />
+    <Route path="/menu/:productId" element={<ProductDetailPage />} />
+    <Route path="/login" element={<Login />} />
+    <Route path="/signup" element={<Signup />} />
 
     <Route element={<ProtectedRoute allowRoles={['customer', 'staff', 'admin', 'shipper']} />}>
       <Route path="/dashboard" element={<Dashboard />} />
     </Route>
-    <Route path="/landing" element={<Landing />} />
-    <Route path="/login" element={<Login />} />
-    <Route path="/signup" element={<Signup />} />
+
+    <Route element={<ProtectedRoute allowRoles={['customer', 'admin']} />}>
+      <Route path="/customer" element={<CustomerLanding />} />
+    </Route>
 
     <Route element={<ProtectedRoute allowRoles={['admin']} />}>
-      <Route element={<AdminLayout />}>
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/admin/users" element={<AdminUsers />} />
-        <Route path="/admin/foods" element={<AdminFoods />} />
-        <Route path="/admin/orders" element={<AdminOrders />} />
-        <Route path="/admin/promotions" element={<AdminPromotions />} />
-        <Route path="/admin/reports" element={<AdminReports />} />
-        <Route path="/admin/settings" element={<AdminSettings />} />
-        <Route path="/admin/inventory" element={<AdminInventory />} />
-        <Route path="/admin/logs" element={<AdminLogs />} />
-        <Route path="/admin/shifts" element={<AdminShifts />} />
+      <Route path="/admin" element={<AdminLayout />}>
+        <Route index element={<AdminDashboard />} />
+        <Route path="users" element={<AdminUsers />} />
+        <Route path="foods" element={<AdminFoods />} />
+        <Route path="orders" element={<AdminOrders />} />
+        <Route path="promotions" element={<AdminPromotions />} />
+        <Route path="news" element={<AdminNews />} />
+        <Route path="reports" element={<AdminReports />} />
+        <Route path="settings" element={<AdminSettings />} />
+        <Route path="inventory" element={<AdminInventory />} />
+        <Route path="logs" element={<AdminLogs />} />
+        <Route path="shifts" element={<AdminShifts />} />
       </Route>
     </Route>
 
     <Route element={<ProtectedRoute allowRoles={['staff', 'admin']} />}>
-      <Route element={<StaffLayout />}>
-        <Route path="/staff" element={<StaffDashboard />} />
-        <Route path="/staff/orders" element={<StaffOrders />} />
-        <Route path="/staff/menu" element={<StaffMenu />} />
-        <Route path="/staff/support" element={<StaffSupport />} />
-        <Route path="/staff/inventory" element={<StaffInventory />} />
-        <Route path="/staff/performance" element={<StaffPerformance />} />
-        <Route path="/staff/shifts" element={<StaffShifts />} />
+      <Route path="/staff" element={<StaffLayout />}>
+        <Route index element={<StaffDashboard />} />
+        <Route path="orders" element={<StaffOrders />} />
+        <Route path="menu" element={<StaffMenu />} />
+        <Route path="support" element={<StaffSupport />} />
+        <Route path="inventory" element={<StaffInventory />} />
+        <Route path="performance" element={<StaffPerformance />} />
+        <Route path="shifts" element={<StaffShifts />} />
       </Route>
     </Route>
 

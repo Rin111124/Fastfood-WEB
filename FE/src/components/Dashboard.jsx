@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Navigate, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
 import { readSession } from '../lib/session'
-import CustomerDashboard from '../pages/customer/CustomerDashboard'
+import CustomerDashboard from '../features/customer/pages/CustomerDashboard'
 
 const Dashboard = () => {
   const navigate = useNavigate()
@@ -22,7 +22,7 @@ const Dashboard = () => {
     } else if (location.pathname !== '/' && location.pathname !== '/dashboard') {
       navigate('/', { replace: true })
     }
-  }, [navigate, session])
+  }, [navigate, session, location.pathname])
 
   if (!session?.token) {
     return <Navigate to="/login" replace />

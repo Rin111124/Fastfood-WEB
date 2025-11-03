@@ -1,5 +1,5 @@
-import { AuthError } from '../services/authService.js';
-import { authorizeRequest } from '../services/authorizationService.js';
+import { AuthError } from '../modules/auth/auth.service.js';
+import { authorizeRequest } from '../modules/auth/authorization.service.js';
 
 const sendError = (res, error) => res.status(error.statusCode || 401).json({
   success: false,

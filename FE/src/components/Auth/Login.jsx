@@ -94,7 +94,16 @@ const Login = () => {
         message: `${crewLead}, your QuickBite station is online. Orders and prep timers are synced.`,
       })
       setFieldErrors({})
-      navigate('/dashboard', { replace: true, state: response })
+      const role = response?.user?.role
+      let destination = '/dashboard'
+      if (role === 'customer') {
+        destination = '/'
+      } else if (role === 'admin') {
+        destination = '/admin'
+      } else if (role === 'staff') {
+        destination = '/staff'
+      }
+      navigate(destination, { replace: true, state: response })
     } catch (error) {
       setFeedback({
         status: 'error',

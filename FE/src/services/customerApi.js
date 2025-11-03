@@ -17,19 +17,25 @@ const parseJson = async (response) => {
 
 const get = (url) => apiFetch(url).then(parseJson)
 
-const post = (url, payload) =>
-  apiFetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  }).then(parseJson)
+const isFormData = (value) => typeof FormData !== 'undefined' && value instanceof FormData
 
-const patch = (url, payload) =>
-  apiFetch(url, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  }).then(parseJson)
+const buildOptions = (method, payload) => {
+  const options = { method }
+  if (payload === undefined || payload === null) {
+    return options
+  }
+  if (isFormData(payload)) {
+    options.body = payload
+    return options
+  }
+  options.headers = { 'Content-Type': 'application/json' }
+  options.body = JSON.stringify(payload)
+  return options
+}
+
+const post = (url, payload) => apiFetch(url, buildOptions('POST', payload)).then(parseJson)
+
+const patch = (url, payload) => apiFetch(url, buildOptions('PATCH', payload)).then(parseJson)
 
 export const customerApi = {
   getDashboard: () => get('/api/customer/dashboard'),
@@ -39,6 +45,14 @@ export const customerApi = {
     if (params.categoryId) query.set('categoryId', params.categoryId)
     if (params.limit) query.set('limit', params.limit)
     return get(`/api/customer/products${query.toString() ? `?${query.toString()}` : ''}`)
+  },
+  listNews: (params = {}) => {
+    const query = new URLSearchParams()
+    if (params.limit) query.set('limit', params.limit)
+    if (params.search && String(params.search).trim()) {
+      query.set('search', String(params.search).trim())
+    }
+    return get(`/api/customer/news${query.toString() ? `?${query.toString()}` : ''}`)
   },
   getProfile: () => get('/api/customer/me'),
   updateProfile: (payload) => patch('/api/customer/me', payload),
@@ -53,3 +67,4 @@ export const customerApi = {
 }
 
 export default customerApi
+

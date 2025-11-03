@@ -7,7 +7,9 @@ import fs from "fs";
 import net from "net";
 import { fileURLToPath } from "url";
 import connectDB from "./config/connectDB.js";
-import initApiRoutes from "./route/api/index.js";
+import initApiRoutes from "./routes/api/index.js";
+import initWebRoutes from "./routes/web/index.js";
+import { UPLOAD_ROOT } from "./middleware/uploadMiddleware.js";
 
 const app = express();
 
@@ -59,14 +61,53 @@ const findAvailablePort = async (startPort, attempts = 5) => {
 };
 
 // Configure CORS allow list from environment
-const allowedOrigins = (process.env.CLIENT_ORIGINS || process.env.CLIENT_ORIGIN || "")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const buildAllowedOrigins = () => {
+  const raw = (process.env.CLIENT_ORIGINS || process.env.CLIENT_ORIGIN || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  const variants = new Set();
+  raw.forEach((origin) => {
+    try {
+      const url = new URL(origin);
+      const base = `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ""}`;
+      variants.add(base);
+
+      if (["localhost", "127.0.0.1", "::1"].includes(url.hostname)) {
+        ["localhost", "127.0.0.1", "::1"].forEach((host) => {
+          variants.add(`${url.protocol}//${host}${url.port ? `:${url.port}` : ""}`);
+        });
+      }
+    } catch {
+      variants.add(origin);
+    }
+  });
+
+  return variants;
+};
+
+const normalizeOrigin = (origin) => {
+  if (!origin) return "";
+  try {
+    const url = new URL(origin);
+    return `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ""}`;
+  } catch {
+    return origin;
+  }
+};
+
+const allowedOrigins = buildAllowedOrigins();
+const allowAllInDev = (process.env.NODE_ENV || "development") !== "production";
 
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || !allowedOrigins.length || allowedOrigins.includes(origin)) {
+    if (
+      !origin ||
+      allowAllInDev ||
+      !allowedOrigins.size ||
+      allowedOrigins.has(normalizeOrigin(origin))
+    ) {
       return callback(null, true);
     }
     console.warn(`Blocked CORS request from origin: ${origin}`);
@@ -82,6 +123,9 @@ app.options("*", cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Static uploads serving
+app.use("/uploads", express.static(UPLOAD_ROOT));
+
 // Session configuration (in-memory store for development)
 app.use(
   session({
@@ -95,6 +139,7 @@ app.use(
   })
 );
 
+initWebRoutes(app);
 initApiRoutes(app);
 
 app.get("/healthz", (req, res) => {

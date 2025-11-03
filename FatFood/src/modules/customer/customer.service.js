@@ -1,0 +1,594 @@
+"use strict";
+
+import { Op, fn, col, literal } from "sequelize";
+import db from "../../models/index.js";
+import { ensureProductImageColumns, ensureNewsImageColumns } from "../../utils/schemaEnsurer.js";
+import { mapImageFields } from "../../utils/imageMapper.js";
+import { isMissingColumnError, isMissingTableError } from "../../utils/dbErrors.js";
+
+const {
+  sequelize,
+  User,
+  Order,
+  OrderItem,
+  Product,
+  Promotion,
+  News
+} = db;
+
+class CustomerServiceError extends Error {
+  constructor(message, statusCode = 400, code = "CUSTOMER_SERVICE_ERROR", metadata = {}) {
+    super(message);
+    this.name = "CustomerServiceError";
+    this.statusCode = statusCode;
+    this.code = code;
+    this.metadata = metadata;
+  }
+}
+
+const toPlain = (item) => (item?.get ? item.get({ plain: true }) : item);
+
+const mapProductImage = (product) => {
+  if (!product) return product;
+  const plain = product?.get ? product.get({ plain: true }) : product;
+  return mapImageFields(plain);
+};
+
+const resolveProductImageAttributes = (supportsBlob) => {
+  const attrs = ["product_id", "name", "price", "image_url", "food_type"];
+  if (supportsBlob) {
+    attrs.splice(3, 0, "image_data", "image_mime");
+  }
+  return attrs;
+};
+
+const excludeImageColumnsWhenUnsupported = (supportsBlob) =>
+  supportsBlob ? undefined : { exclude: ["image_data", "image_mime"] };
+
+const ensureCustomerUser = async (userId) => {
+  const user = await User.findByPk(userId);
+  if (!user) {
+    throw new CustomerServiceError("Khong tim thay nguoi dung", 404, "USER_NOT_FOUND");
+  }
+  if (!["customer", "admin"].includes(user.role)) {
+    throw new CustomerServiceError("Vai tro khong duoc phep thuc hien thao tac nay", 403, "ROLE_NOT_ALLOWED");
+  }
+  return user;
+};
+
+const PROFILE_FIELDS = ["full_name", "phone_number", "address", "gender"];
+const VALID_GENDERS = new Set(["male", "female", "other", "unknown"]);
+
+const sanitizeProfileFields = (payload = {}) => {
+  const result = {};
+  PROFILE_FIELDS.forEach((field) => {
+    if (!Object.prototype.hasOwnProperty.call(payload, field)) {
+      return;
+    }
+    const value = payload[field];
+    if (field === "gender") {
+      if (value === null || value === undefined) {
+        result[field] = "unknown";
+        return;
+      }
+      const normalized = typeof value === "string" ? value.trim().toLowerCase() : value;
+      result[field] = VALID_GENDERS.has(normalized) ? normalized : "unknown";
+      return;
+    }
+    if (value === null || value === undefined) {
+      result[field] = null;
+      return;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      result[field] = trimmed.length ? trimmed : null;
+      return;
+    }
+    result[field] = value;
+  });
+  return result;
+};
+
+const hasMeaningfulProfileValue = (payload = {}) =>
+  PROFILE_FIELDS.some((field) => {
+    if (!Object.prototype.hasOwnProperty.call(payload, field)) {
+      return false;
+    }
+    const value = payload[field];
+    if (field === "gender") {
+      return Boolean(value) && value !== "unknown";
+    }
+    if (value === null || value === undefined) {
+      return false;
+    }
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    return true;
+  });
+
+const profileHasStoredDetails = (user) =>
+  Boolean(
+    user?.full_name ||
+      user?.phone_number ||
+      user?.address ||
+      (user?.gender && user.gender !== "unknown")
+  );
+
+const listActiveProducts = async ({ search, categoryId, limit } = {}) => {
+  const supportsBlob = (await ensureProductImageColumns()) !== false;
+  const where = {};
+  if (categoryId) {
+    where.category_id = Number(categoryId);
+  }
+  if (search) {
+    where.name = { [Op.like]: `%${search.trim()}%` };
+  }
+
+  const options = {
+    where,
+    include: [{ model: db.ProductOption, as: "options" }],
+    order: [["updated_at", "DESC"]]
+  };
+
+  if (limit) {
+    const parsedLimit = Number(limit);
+    if (!Number.isNaN(parsedLimit) && parsedLimit > 0) {
+      options.limit = Math.min(parsedLimit, 50);
+    }
+  }
+
+  if (!supportsBlob) {
+    options.attributes = excludeImageColumnsWhenUnsupported(supportsBlob);
+  }
+
+  let products;
+  try {
+    products = await Product.findAll(options);
+  } catch (error) {
+    if (supportsBlob && isMissingColumnError(error)) {
+      console.warn("Falling back to URL-only product images due to missing columns.");
+      products = await Product.findAll({
+        ...options,
+        attributes: excludeImageColumnsWhenUnsupported(false)
+      });
+    } else if (isMissingTableError(error)) {
+      console.warn("Products table not found; returning empty list to customer.");
+      products = [];
+    } else {
+      throw error;
+    }
+  }
+
+  return products.map((product) => {
+    const mapped = mapProductImage(product);
+    mapped.options = Array.isArray(mapped.options) ? mapped.options : [];
+    return mapped;
+  });
+};
+
+const listNews = async ({ limit, search } = {}) => {
+  const supportsBlob = (await ensureNewsImageColumns()) !== false;
+  const query = {
+    order: [["created_at", "DESC"]],
+    paranoid: false
+  };
+
+  const normalizedSearch = typeof search === "string" ? search.trim() : "";
+  if (normalizedSearch) {
+    const escaped = normalizedSearch.replace(/[%_\\]/g, "\\$&");
+    const pattern = `%${escaped}%`;
+    query.where = {
+      [Op.or]: [{ title: { [Op.like]: pattern } }, { content: { [Op.like]: pattern } }]
+    };
+  }
+
+  if (limit) {
+    const parsedLimit = Number(limit);
+    if (!Number.isNaN(parsedLimit) && parsedLimit > 0) {
+      query.limit = Math.min(parsedLimit, 20);
+    }
+  }
+
+  if (!supportsBlob) {
+    query.attributes = excludeImageColumnsWhenUnsupported(supportsBlob);
+  }
+
+  let items;
+  try {
+    items = await News.findAll(query);
+  } catch (error) {
+    if (supportsBlob && isMissingColumnError(error)) {
+      console.warn("Falling back to URL-only news images for customer API due to missing columns.");
+      items = await News.findAll({
+        ...query,
+        attributes: excludeImageColumnsWhenUnsupported(false)
+      });
+    } else if (isMissingTableError(error)) {
+      console.warn("News table not found; returning empty list to customer.");
+      items = [];
+    } else {
+      console.error("Customer listNews error:", error);
+      return [];
+    }
+  }
+
+  return items.map((item) => {
+    const plain = item.get({ plain: true });
+    return mapImageFields(plain, { includeMime: supportsBlob });
+  });
+};
+
+const mapOrderPlain = (order) => {
+  const plain = order.get({ plain: true });
+  const items = Array.isArray(plain.OrderItems) ? plain.OrderItems : [];
+  return {
+    ...plain,
+    items: items.map((item) => ({
+      order_item_id: item.order_item_id,
+      product_id: item.product_id,
+      quantity: item.quantity,
+      price: item.price,
+      product: item.Product ? mapProductImage(item.Product) : null
+    }))
+  };
+};
+
+const buildOrderSummary = (ordersByStatus, totalSpentRaw) => {
+  const summaryMap = ordersByStatus.reduce((acc, item) => {
+    acc[item.status] = Number(item.count || 0);
+    return acc;
+  }, {});
+
+  const totalOrders = ordersByStatus.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  const completedOrders = summaryMap.completed || 0;
+  const activeOrders = (summaryMap.pending || 0) + (summaryMap.confirmed || 0) + (summaryMap.preparing || 0) + (summaryMap.delivering || 0) + (summaryMap.shipping || 0);
+  const canceledOrders = summaryMap.canceled || 0;
+  const totalSpent = Number(totalSpentRaw || 0);
+  const averageOrderValue = totalOrders ? Number((totalSpent / totalOrders).toFixed(0)) : 0;
+
+  return {
+    totalOrders,
+    completedOrders,
+    activeOrders,
+    canceledOrders,
+    totalSpent,
+    averageOrderValue
+  };
+};
+
+const getCustomerDashboard = async (userId) => {
+  const supportsBlob = (await ensureProductImageColumns()) !== false;
+  const productImageAttributes = resolveProductImageAttributes(supportsBlob);
+  let profile = null;
+  let ordersByStatus = [];
+  let totalSpent = 0;
+  let recentOrders = [];
+
+  if (userId) {
+    const user = await ensureCustomerUser(userId);
+    profile = toPlain(user);
+
+    [ordersByStatus, totalSpent, recentOrders] = await Promise.all([
+      Order.findAll({
+        where: { user_id: userId },
+        attributes: ["status", [fn("COUNT", col("status")), "count"]],
+        group: ["status"],
+        raw: true
+      }),
+      Order.sum("total_amount", {
+        where: {
+          user_id: userId,
+          status: { [Op.notIn]: ["canceled", "refunded"] }
+        }
+      }),
+      Order.findAll({
+        where: { user_id: userId },
+        include: [
+          {
+            model: OrderItem,
+            include: [{ model: Product, attributes: productImageAttributes }]
+          }
+        ],
+        order: [["created_at", "DESC"]],
+        limit: 5
+      })
+    ]);
+
+    recentOrders = recentOrders.map(mapOrderPlain);
+  }
+
+  const now = new Date();
+
+  const [activePromotions, topProducts] = await Promise.all([
+    Promotion.findAll({
+      where: {
+        is_active: true,
+        start_date: { [Op.lte]: now },
+        end_date: { [Op.gte]: now },
+        [Op.or]: [
+          { applicable_roles: null },
+          literal("JSON_CONTAINS(COALESCE(applicable_roles, '[]'), '\"customer\"')")
+        ]
+      },
+      order: [["end_date", "ASC"]],
+      limit: 5
+    }),
+    OrderItem.findAll({
+      attributes: [
+        "product_id",
+        [fn("SUM", col("quantity")), "totalSold"],
+        [literal("SUM(`OrderItem`.`quantity` * `OrderItem`.`price`)"), "revenue"]
+      ],
+      include: [
+        {
+          model: Product,
+          attributes: productImageAttributes
+        }
+      ],
+      group: ["product_id", "Product.product_id"],
+      order: [[literal("totalSold"), "DESC"]],
+      limit: 6
+    })
+  ]);
+
+  const formattedTopProducts = topProducts.map((item) => ({
+    product_id: item.product_id,
+    totalSold: Number(item.get("totalSold") || 0),
+    revenue: Number(item.get("revenue") || 0),
+    product: item.Product ? mapProductImage(item.Product) : null
+  }));
+
+  return {
+    profile,
+    orderSummary: buildOrderSummary(ordersByStatus, totalSpent),
+    recentOrders,
+    activePromotions: activePromotions.map(toPlain),
+    recommendations: formattedTopProducts
+  };
+};
+
+const listOrdersForCustomer = async (userId, { status } = {}) => {
+  await ensureCustomerUser(userId);
+  const supportsBlob = (await ensureProductImageColumns()) !== false;
+  const productImageAttributes = resolveProductImageAttributes(supportsBlob);
+  const where = { user_id: userId };
+  if (status && status !== "all") {
+    where.status = status;
+  }
+
+  let orders;
+  try {
+    orders = await Order.findAll({
+      where,
+      include: [
+        {
+          model: OrderItem,
+          include: [{ model: Product, attributes: productImageAttributes }]
+        }
+      ],
+      order: [["created_at", "DESC"]]
+    });
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      console.warn("Orders table not found; returning empty list to customer.");
+      return [];
+    }
+    throw error;
+  }
+
+  return orders.map(mapOrderPlain);
+};
+
+const getCustomerOrder = async (userId, orderId) => {
+  await ensureCustomerUser(userId);
+  const supportsBlob = (await ensureProductImageColumns()) !== false;
+  const productImageAttributes = resolveProductImageAttributes(supportsBlob);
+  let order;
+  try {
+    order = await Order.findOne({
+      where: { order_id: orderId, user_id: userId },
+      include: [
+        {
+          model: OrderItem,
+          include: [{ model: Product, attributes: productImageAttributes }]
+        }
+      ]
+    });
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      throw new CustomerServiceError("Khong co du lieu don hang trong he thong", 404, "ORDER_TABLE_MISSING");
+    }
+    throw error;
+  }
+  if (!order) {
+    throw new CustomerServiceError("Khong tim thay don hang", 404, "ORDER_NOT_FOUND");
+  }
+  return mapOrderPlain(order);
+};
+
+const createOrderForCustomer = async (userId, payload = {}) => {
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  if (!items.length) {
+    throw new CustomerServiceError("Don hang phai co it nhat mot san pham", 422, "ORDER_ITEMS_REQUIRED");
+  }
+
+  const sanitizedItems = items.map((item, index) => {
+    const productId = Number(item.productId ?? item.product_id);
+    const quantity = Number(item.quantity);
+    if (!productId || Number.isNaN(productId)) {
+      throw new CustomerServiceError(`Ma san pham khong hop le tai vi tri ${index + 1}`, 422, "PRODUCT_INVALID");
+    }
+    if (!quantity || Number.isNaN(quantity) || quantity <= 0) {
+      throw new CustomerServiceError(`So luong phai lon hon 0 tai vi tri ${index + 1}`, 422, "QUANTITY_INVALID");
+    }
+    return { productId, quantity };
+  });
+
+  const productIds = [...new Set(sanitizedItems.map((item) => item.productId))];
+  const supportsBlob = (await ensureProductImageColumns()) !== false;
+  const productImageAttributes = resolveProductImageAttributes(supportsBlob);
+  let products;
+  try {
+    products = await Product.findAll({
+      where: { product_id: productIds, is_active: true },
+      attributes: supportsBlob ? undefined : excludeImageColumnsWhenUnsupported(supportsBlob)
+    });
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      throw new CustomerServiceError("He thong chua khoi tao du lieu san pham", 500, "PRODUCT_TABLE_MISSING");
+    }
+    throw error;
+  }
+
+  if (products.length !== productIds.length) {
+    const missing = productIds.filter((id) => !products.some((product) => product.product_id === id));
+    throw new CustomerServiceError("Mot so san pham khong ton tai hoac da ngung ban", 404, "PRODUCT_NOT_FOUND", { missing });
+  }
+
+  const productMap = products.reduce((acc, product) => {
+    acc[product.product_id] = product;
+    return acc;
+  }, {});
+
+  const orderItemsPayload = sanitizedItems.map((item) => {
+    const product = productMap[item.productId];
+    return {
+      product_id: product.product_id,
+      quantity: item.quantity,
+      price: Number(product.price)
+    };
+  });
+
+  const totalAmount = orderItemsPayload.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
+
+  return sequelize.transaction(async (transaction) => {
+    const order = await Order.create(
+      {
+        user_id: userId,
+        total_amount: totalAmount,
+        status: "pending",
+        note: payload.note ? String(payload.note).trim() : null,
+        expected_delivery_time: payload.expectedDeliveryTime ? new Date(payload.expectedDeliveryTime) : null
+      },
+      { transaction }
+    );
+
+    await OrderItem.bulkCreate(
+      orderItemsPayload.map((item) => ({
+        ...item,
+        order_id: order.order_id
+      })),
+      { transaction }
+    );
+
+    const created = await Order.findByPk(order.order_id, {
+      include: [
+        {
+          model: OrderItem,
+          include: [{ model: Product, attributes: productImageAttributes }]
+        }
+      ],
+      transaction
+    });
+
+    return mapOrderPlain(created);
+  });
+};
+
+const cancelCustomerOrder = async (userId, orderId) => {
+  await ensureCustomerUser(userId);
+  const order = await Order.findOne({ where: { order_id: orderId, user_id: userId } });
+  if (!order) {
+    throw new CustomerServiceError("Khong tim thay don hang", 404, "ORDER_NOT_FOUND");
+  }
+
+  if (["completed", "canceled", "refunded"].includes(order.status)) {
+    throw new CustomerServiceError("Don hang khong the huy o trang thai hien tai", 409, "ORDER_NOT_CANCELABLE", {
+      status: order.status
+    });
+  }
+
+  order.status = "canceled";
+  await order.save();
+
+  return mapOrderPlain(order);
+};
+
+const getProfile = async (userId) => {
+  const user = await ensureCustomerUser(userId);
+  return toPlain(user);
+};
+
+const createProfile = async (userId, payload = {}) => {
+  const user = await ensureCustomerUser(userId);
+  if (profileHasStoredDetails(user)) {
+    throw new CustomerServiceError(
+      "Thong tin nguoi dung da ton tai. Vui long su dung chuc nang cap nhat.",
+      409,
+      "PROFILE_ALREADY_EXISTS"
+    );
+  }
+
+  const updates = sanitizeProfileFields(payload);
+  if (!Object.keys(updates).length || !hasMeaningfulProfileValue(updates)) {
+    throw new CustomerServiceError(
+      "Vui long cung cap it nhat mot truong thong tin.",
+      422,
+      "PROFILE_MISSING_FIELDS"
+    );
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(updates, "gender")) {
+    updates.gender = "unknown";
+  }
+
+  await user.update({
+    full_name: null,
+    phone_number: null,
+    address: null,
+    gender: "unknown",
+    ...updates
+  });
+
+  return toPlain(user);
+};
+
+const updateProfile = async (userId, payload = {}) => {
+  const user = await ensureCustomerUser(userId);
+  const updates = sanitizeProfileFields(payload);
+
+  if (!Object.keys(updates).length) {
+    throw new CustomerServiceError("Khong co truong nao duoc cap nhat", 422, "NO_UPDATES");
+  }
+
+  await user.update(updates);
+  return toPlain(user);
+};
+
+const deleteProfile = async (userId) => {
+  const user = await ensureCustomerUser(userId);
+  await user.update({
+    full_name: null,
+    phone_number: null,
+    address: null,
+    gender: "unknown"
+  });
+  return toPlain(user);
+};
+
+export {
+  CustomerServiceError,
+  listActiveProducts,
+  listNews,
+  getCustomerDashboard,
+  listOrdersForCustomer,
+  getCustomerOrder,
+  createOrderForCustomer,
+  cancelCustomerOrder,
+  getProfile,
+  createProfile,
+  updateProfile,
+  deleteProfile
+};
+

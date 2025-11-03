@@ -10,10 +10,25 @@ const ProtectedRoute = ({ allowRoles }) => {
     return <Navigate to="/login" replace state={{ from: location }} />
   }
 
+  const role = (session?.user?.role || '').toLowerCase()
   if (allowRoles && allowRoles.length) {
-    const role = (session?.user?.role || '').toLowerCase()
-    if (!allowRoles.map((item) => item.toLowerCase()).includes(role)) {
-      return <Navigate to="/dashboard" replace />
+    const allowed = allowRoles.map((item) => item.toLowerCase())
+    if (!allowed.includes(role)) {
+      const fallback = (() => {
+        switch (role) {
+          case 'admin':
+            return '/admin'
+          case 'staff':
+            return '/staff'
+          case 'customer':
+            return '/customer'
+          case 'shipper':
+            return '/dashboard'
+          default:
+            return '/'
+        }
+      })()
+      return <Navigate to={fallback} replace />
     }
   }
 
