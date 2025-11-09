@@ -1,5 +1,6 @@
 import "dotenv/config.js";
 import express from "express";
+import http from "http";
 import cors from "cors";
 import session from "express-session";
 import path from "path";
@@ -10,6 +11,7 @@ import connectDB from "./config/connectDB.js";
 import initApiRoutes from "./routes/api/index.js";
 import initWebRoutes from "./routes/web/index.js";
 import { UPLOAD_ROOT } from "./middleware/uploadMiddleware.js";
+import { initSocket } from "./realtime/io.js";
 
 const app = express();
 
@@ -193,7 +195,11 @@ const startServer = async () => {
       );
     }
     process.env.PORT = String(portToUse);
-    const server = app.listen(portToUse, () => {
+    const server = http.createServer(app);
+    // Init Socket.IO once HTTP server is created
+    initSocket(server, { allowedOrigins, allowAllInDev });
+
+    server.listen(portToUse, () => {
       console.log(`Backend Node.js is running on port ${portToUse}`);
     });
     server.on("error", (error) => {

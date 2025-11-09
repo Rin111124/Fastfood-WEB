@@ -42,6 +42,7 @@ export const staffApi = {
     patch(`/api/staff/orders/${orderId}/status${staffId ? `?staffId=${staffId}` : ''}`, { status }),
   toggleProduct: (productId) => post(`/api/staff/menu/${productId}/toggle`),
   listSupportMessages: () => get('/api/staff/support/messages'),
+  getSupportMetrics: () => get('/api/staff/support/metrics'),
   replySupportMessage: (messageId, payload) => post(`/api/staff/support/${messageId}/reply`, payload),
   listInventory: () => get('/api/staff/inventory'),
   updateInventory: (payload) => post('/api/staff/inventory', payload),

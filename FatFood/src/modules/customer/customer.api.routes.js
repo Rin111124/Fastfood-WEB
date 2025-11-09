@@ -11,6 +11,10 @@ import {
   createProfileHandler,
   updateProfileHandler,
   deleteProfileHandler,
+  listSupportMessagesForMeHandler,
+  createSupportMessageHandler,
+  getMyConversationMessagesHandler,
+  postMyConversationMessageHandler,
   // cart
   getCartHandler,
   addCartItemHandler,
@@ -37,6 +41,12 @@ router.get("/orders", listOrdersHandler);
 router.post("/orders", createOrderHandler);
 router.get("/orders/:orderId", getOrderHandler);
 router.post("/orders/:orderId/cancel", cancelOrderHandler);
+
+// Support messages (authenticated)
+router.get("/support/messages", listSupportMessagesForMeHandler);
+router.post("/support/messages", createSupportMessageHandler);
+router.get("/support/conversation/messages", getMyConversationMessagesHandler);
+router.post("/support/conversation/messages", postMyConversationMessageHandler);
 
 // Cart endpoints (authenticated)
 router.get("/cart", getCartHandler);

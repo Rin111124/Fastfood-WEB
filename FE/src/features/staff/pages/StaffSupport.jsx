@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { connectSocket } from '../../../lib/socket'
 import AdminStatusAlert from '../../../components/admin/AdminStatusAlert'
 import Spinner from '../../../components/common/Spinner'
 import staffApi from '../../../services/staffApi'
@@ -10,6 +11,7 @@ const StaffSupport = () => {
   const [statusType, setStatusType] = useState('info')
   const [messages, setMessages] = useState([])
   const [draftReplies, setDraftReplies] = useState({})
+  const [typingMap, setTypingMap] = useState({})
 
   const loadMessages = async () => {
     setLoading(true)
@@ -35,6 +37,26 @@ const StaffSupport = () => {
 
   useEffect(() => {
     loadMessages()
+  }, [])
+
+  useEffect(() => {
+    const socket = connectSocket()
+    const onNew = (payload) => setMessages((prev) => [payload, ...prev])
+    const onReplied = (payload) => setMessages((prev) => prev.map((m) => (m.message_id === payload.message_id ? { ...m, ...payload } : m)))
+    const onTyping = (p) => {
+      const userId = p?.user_id
+      if (!userId) return
+      setTypingMap((prev) => ({ ...prev, [userId]: !!p?.typing }))
+      if (p?.typing) setTimeout(() => setTypingMap((prev) => ({ ...prev, [userId]: false })), 1500)
+    }
+    socket.on('support:new', onNew)
+    socket.on('support:replied', onReplied)
+    socket.on('support:typing', onTyping)
+    return () => {
+      socket.off('support:new', onNew)
+      socket.off('support:replied', onReplied)
+      socket.off('support:typing', onTyping)
+    }
   }, [])
 
   const handleReplyChange = (messageId, value) => {
@@ -70,6 +92,11 @@ const StaffSupport = () => {
           </div>
         ) : (
           <div className="d-flex flex-column gap-3">
+            {Object.values(typingMap).some(Boolean) && (
+              <div className="alert alert-info py-2">
+                Co khach dang go tin nhan...
+              </div>
+            )}
             {messages.map((message) => (
               <div key={message.message_id} className="border rounded-3 p-3">
                 <div className="d-flex justify-content-between align-items-start mb-2">
@@ -88,7 +115,14 @@ const StaffSupport = () => {
                     rows={2}
                     placeholder="Nhap cau tra loi cho khach hang..."
                     value={draftReplies[message.message_id] ?? ''}
-                    onChange={(event) => handleReplyChange(message.message_id, event.target.value)}
+                    onChange={(event) => {
+                      handleReplyChange(message.message_id, event.target.value)
+                      try {
+                        const s = connectSocket()
+                        s.emit('support:typing', { user_id: message.user_id, typing: true })
+                        setTimeout(() => s.emit('support:typing', { user_id: message.user_id, typing: false }), 1200)
+                      } catch {}
+                    }}
                   />
                   <div className="d-flex justify-content-end gap-2">
                     <button type="submit" className="btn btn-sm btn-primary">

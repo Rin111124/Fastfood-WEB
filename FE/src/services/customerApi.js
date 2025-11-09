@@ -69,7 +69,13 @@ export const customerApi = {
   addToCart: ({ productId, quantity } = {}) => post('/api/customer/cart/items', { productId, quantity }),
   updateCartItem: ({ productId, quantity }) => patch(`/api/customer/cart/items/${productId}`, { quantity }),
   removeCartItem: (productId) => apiFetch(`/api/customer/cart/items/${productId}`, { method: 'DELETE' }).then(parseJson),
-  clearCart: () => post('/api/customer/cart/clear', {})
+  clearCart: () => post('/api/customer/cart/clear', {}),
+  // support
+  listSupportMessages: () => get('/api/customer/support/messages'),
+  createSupportMessage: (message) => post('/api/customer/support/messages', { message }),
+  // conversation
+  getConversationMessages: () => get('/api/customer/support/conversation/messages'),
+  postConversationMessage: (message) => post('/api/customer/support/conversation/messages', { message })
 }
 
 export default customerApi

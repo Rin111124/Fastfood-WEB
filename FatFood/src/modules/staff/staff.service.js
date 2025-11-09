@@ -11,7 +11,9 @@ const {
   OrderItem,
   Product,
   Message,
-  StaffShift
+  StaffShift,
+  Conversation,
+  ChatMessage
 } = db;
 
 class StaffServiceError extends Error {
@@ -130,6 +132,11 @@ const listSupportMessages = async () => {
   return messages.map((msg) => msg.get({ plain: true }));
 };
 
+const getSupportMetrics = async () => {
+  const unrepliedCount = await Message.count({ where: { reply: null } });
+  return { unrepliedCount };
+};
+
 const replySupportMessage = async (messageId, staffId, reply) => {
   await ensureStaffUser(staffId);
   const message = await Message.findByPk(messageId, { paranoid: false });
@@ -139,6 +146,19 @@ const replySupportMessage = async (messageId, staffId, reply) => {
   message.reply = reply;
   message.from_role = "staff";
   await message.save();
+  // Append to conversation history as multi-turn
+  if (message.user_id) {
+    try {
+      let convo = await Conversation.findOne({ where: { user_id: message.user_id, status: 'open' } });
+      if (!convo) {
+        convo = await Conversation.create({ user_id: message.user_id, status: 'open', last_message_at: new Date() });
+      }
+      await ChatMessage.create({ conversation_id: convo.conversation_id, sender_role: 'staff', body: String(reply || '') });
+      await convo.update({ last_message_at: new Date() });
+    } catch (error) {
+      // If conversation tables missing, ignore silently
+    }
+  }
   return message.get({ plain: true });
 };
 
@@ -182,6 +202,7 @@ export {
   updateAssignedOrderStatus,
   toggleProductStatus,
   listSupportMessages,
+  getSupportMetrics,
   replySupportMessage,
   listInventoryItems,
   updateInventoryFromStaff,

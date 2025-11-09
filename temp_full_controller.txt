@@ -20,8 +20,8 @@ import {
   removeCartItem,
   clearCart
 } from "./customer.service.js";
-import { listMySupportMessages, createSupportMessage, listMyConversationMessages, appendMyConversationMessage } from "./customer.service.js";
-import { emitToStaff, emitToUser } from "../../realtime/io.js";
+import { listMySupportMessages, createSupportMessage } from "./customer.service.js";
+import { emitToStaff } from "../../realtime/io.js";
 
 const handleError = (res, error) => {
   if (error instanceof CustomerServiceError) {
@@ -204,40 +204,7 @@ const createSupportMessageHandler = async (req, res) => {
     const data = await createSupportMessage(userId, content);
     // notify staff
     emitToStaff('support:new', data);
-    // if bot auto-replied, notify user realtime
-    if (data?.reply) {
-      emitToUser(userId, 'support:replied', data);
-    }
     return res.status(201).json({ success: true, data });
-  } catch (error) {
-    return handleError(res, error);
-  }
-};
-
-// Conversation-based endpoints
-const getMyConversationMessagesHandler = async (req, res) => {
-  try {
-    const userId = resolveUserId(req);
-    if (!userId) return res.status(401).json({ success: false, message: "Chua dang nhap" });
-    const data = await listMyConversationMessages(userId, { limit: req.query.limit });
-    return res.json({ success: true, data });
-  } catch (error) {
-    return handleError(res, error);
-  }
-};
-
-const postMyConversationMessageHandler = async (req, res) => {
-  try {
-    const userId = resolveUserId(req);
-    if (!userId) return res.status(401).json({ success: false, message: "Chua dang nhap" });
-    const content = String(req.body?.message || '').trim();
-    if (!content) return res.status(400).json({ success: false, message: "Noi dung khong duoc de trong" });
-    const result = await appendMyConversationMessage(userId, content);
-    // notify staff new user message
-    emitToStaff('support:new', { user_id: userId, preview: content });
-    // notify user if bot replied
-    if (result?.bot) emitToUser(userId, 'support:replied', { message_id: 0, reply: result.bot.body });
-    return res.status(201).json({ success: true, data: result });
   } catch (error) {
     return handleError(res, error);
   }
@@ -313,8 +280,6 @@ export {
   // support
   listSupportMessagesForMeHandler,
   createSupportMessageHandler,
-  getMyConversationMessagesHandler,
-  postMyConversationMessageHandler,
   
   // cart
   getCartHandler,

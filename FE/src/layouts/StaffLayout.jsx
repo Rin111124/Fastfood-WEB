@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom'
 import { clearSession } from '../lib/session'
+import staffApi from '../services/staffApi'
+import { connectSocket } from '../lib/socket'
 
 const STAFF_LINKS = [
   { to: '/staff', icon: 'bi-house-door', label: 'Tong quan', exact: true },
@@ -12,7 +14,7 @@ const STAFF_LINKS = [
   { to: '/staff/shifts', icon: 'bi-calendar-check', label: 'Lich truc' }
 ]
 
-const StaffSidebar = ({ onNavigate }) => (
+const StaffSidebar = ({ onNavigate, supportUnreplied = 0 }) => (
   <div className="d-flex flex-column h-100">
     <div className="d-flex align-items-center mb-4">
       <div
@@ -44,6 +46,9 @@ const StaffSidebar = ({ onNavigate }) => (
           })}
         >
           <i className={`bi ${item.icon} me-2`} /> {item.label}
+          {item.to === '/staff/support' && supportUnreplied > 0 && (
+            <span className="badge rounded-pill bg-danger ms-auto">{supportUnreplied}</span>
+          )}
         </NavLink>
       ))}
     </nav>
@@ -55,6 +60,26 @@ const StaffLayout = () => {
   const outletContext = useOutletContext()
   const session = outletContext?.session
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const [supportUnreplied, setSupportUnreplied] = useState(0)
+
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const data = await staffApi.getSupportMetrics()
+        setSupportUnreplied(Number(data?.unrepliedCount || 0))
+      } catch {}
+    }
+    fetchMetrics()
+    const socket = connectSocket()
+    const onNew = () => setSupportUnreplied((c) => c + 1)
+    const onReplied = () => setSupportUnreplied((c) => (c > 0 ? c - 1 : 0))
+    socket.on('support:new', onNew)
+    socket.on('support:replied', onReplied)
+    return () => {
+      socket.off('support:new', onNew)
+      socket.off('support:replied', onReplied)
+    }
+  }, [])
 
   const handleLogout = () => {
     clearSession()
@@ -67,7 +92,7 @@ const StaffLayout = () => {
         className="d-none d-lg-flex flex-column text-white p-3"
         style={{ width: 240, background: '#1a2332', borderRight: '1px solid rgba(17,28,68,0.25)' }}
       >
-        <StaffSidebar />
+        <StaffSidebar supportUnreplied={supportUnreplied} />
         <div className="mt-auto pt-4 d-flex flex-column gap-2">
           <NavLink to="/admin" className="btn btn-outline-light" onClick={() => setMobileSidebarOpen(false)}>
             <i className="bi bi-speedometer2 me-2" />
@@ -136,7 +161,7 @@ const StaffLayout = () => {
                 onClick={() => setMobileSidebarOpen(false)}
               />
             </div>
-            <StaffSidebar onNavigate={() => setMobileSidebarOpen(false)} />
+            <StaffSidebar onNavigate={() => setMobileSidebarOpen(false)} supportUnreplied={supportUnreplied} />
             <div className="mt-4 pt-3 border-top border-light-subtle d-flex flex-column gap-2">
               <NavLink to="/admin" className="btn btn-outline-light" onClick={() => setMobileSidebarOpen(false)}>
                 <i className="bi bi-speedometer2 me-2" />

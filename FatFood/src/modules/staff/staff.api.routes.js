@@ -5,6 +5,7 @@ import {
   staffUpdateOrderStatusHandler,
   staffToggleProductHandler,
   staffSupportMessagesHandler,
+  staffSupportMetricsHandler,
   staffReplySupportHandler,
   staffInventoryHandler,
   staffUpdateInventoryHandler,
@@ -22,6 +23,7 @@ router.get("/orders", staffOrdersHandler);
 router.patch("/orders/:orderId/status", staffUpdateOrderStatusHandler);
 router.post("/menu/:productId/toggle", staffToggleProductHandler);
 router.get("/support/messages", staffSupportMessagesHandler);
+router.get("/support/metrics", staffSupportMetricsHandler);
 router.post("/support/:messageId/reply", staffReplySupportHandler);
 router.get("/inventory", staffInventoryHandler);
 router.post("/inventory", staffUpdateInventoryHandler);

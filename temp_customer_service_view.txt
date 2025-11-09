@@ -690,43 +690,20 @@ const createSupportMessage = async (userId, content) => {
     sent_at: new Date()
   });
 
-  // Link to conversation + mirror user message
-  let convo = null;
-  try {
-    convo = await findOrCreateConversation(user.user_id);
-  } catch (error) {
-    if (!isMissingTableError(error)) throw error;
-  }
-  if (convo) {
-    try {
-      await ChatMessage.create({ conversation_id: convo.conversation_id, sender_role: 'user', body: text });
-      await convo.update({ last_message_at: new Date() });
-    } catch (error) {
-      if (!isMissingTableError(error)) throw error;
-    }
+  // Link to conversation + create chat message for multi-turn support
+  let convo = null; try { convo = await findOrCreateConversation(user.user_id); } catch (error) { if (!isMissingTableError(error)) { throw error; } }
+  if (convo) { try { await ChatMessage.create({ conversation_id: convo.conversation_id, sender_role: 'user', body: text }); if (convo) { try { await convo.update({ last_message_at: new Date() }); } catch {} } } catch (error) { if (!isMissingTableError(error)) { throw error; } } }
+  if (convo) { try { await convo.update({ last_message_at: new Date() }); } catch {} }
+
+  // Try auto-reply
+  const auto = await generateSmartReply(user.user_id, text);
+  if (auto) {
+    await row.update({ reply: auto, from_role: 'bot' });
+    if (convo) { try { await ChatMessage.create({ conversation_id: convo.conversation_id, sender_role: 'bot', body: auto }); await convo.update({ last_message_at: new Date() }); } catch (error) { if (!isMissingTableError(error)) { throw error; } } }
+    if (convo) { try { await convo.update({ last_message_at: new Date() }); } catch {} }
   }
 
-  // Auto or AI reply
-  let replyText = generateAutoReplyV2(text);
-  const isFallback = (v) => !v || /^cam on ban da lien he/i.test(String(v).toLowerCase());
-  if (isFallback(replyText) && process.env.OPENAI_API_KEY) {
-    try {
-      replyText = await generateAIReply({ userId, text, history: [] });
-    } catch {}
-  }
-
-  if (replyText) {
-    await row.update({ reply: replyText, from_role: 'bot' });
-    if (convo) {
-      try {
-        await ChatMessage.create({ conversation_id: convo.conversation_id, sender_role: 'bot', body: replyText });
-        await convo.update({ last_message_at: new Date() });
-      } catch (error) {
-        if (!isMissingTableError(error)) throw error;
-      }
-    }
-  }
-
+  // attach minimal user info for convenience
   const plain = row.get({ plain: true });
   plain.User = { user_id: user.user_id, username: user.username, full_name: user.full_name };
   return plain;
@@ -764,9 +741,12 @@ const listMyConversationMessages = async (userId, { limit = 200 } = {}) => {
   }
 
   if (!items) {
-    const legacy = await Message.findAll({ where: { user_id: userId }, order: [["created_at","ASC"]], paranoid: false });
+    // Legacy fallback to messages table
+    const legacy = await Message.findAll({ where: { user_id: userId }, order: [["created_at", "ASC"]], paranoid: false });
     items = legacy.flatMap((m) => {
-      const list = [{ chat_message_id: m.message_id * 2 - 1, conversation_id: 0, sender_role: "user", body: m.message, created_at: m.created_at, updated_at: m.updated_at }];
+      const list = [
+        { chat_message_id: m.message_id * 2 - 1, conversation_id: 0, sender_role: "user", body: m.message, created_at: m.created_at, updated_at: m.updated_at }
+      ];
       if (m.reply) {
         list.push({ chat_message_id: m.message_id * 2, conversation_id: 0, sender_role: "staff", body: m.reply, created_at: m.updated_at, updated_at: m.updated_at });
       }
@@ -774,20 +754,24 @@ const listMyConversationMessages = async (userId, { limit = 200 } = {}) => {
     });
   }
 
-  const plain = items.map((r) => (r?.get ? r.get({ plain: true }) : r));
-  if (!plain.length) {
-    const greeting = [
-      'Chào bạn! Mình là FatBot – trợ lý của FatFood. 😊',
-      '',
-      'Bạn cần hỗ trợ gì ạ?',
-      '1) Xem thực đơn & Đặt hàng 🍔',
-      '2) Khuyến mãi hôm nay 🔥',
-      '3) Kiểm tra tình trạng đơn hàng 🛵',
-      '4) Địa chỉ & Giờ mở cửa 📍',
-      '5) Gặp nhân viên hỗ trợ 🧑‍💼'
-    ].join('\n')
-    return [{ chat_message_id: 0, conversation_id: 0, sender_role: 'bot', body: greeting, created_at: new Date(), updated_at: new Date() }];
+  let plain = items.map((r) => (r?.get ? r.get({ plain: true }) : r));
+
+  // Auto greeting if conversation is empty
+  if (plain.length === 0) {
+    const greeting = greetText();
+    if (convo) {
+      try {
+        const bot = await ChatMessage.create({ conversation_id: convo.conversation_id, sender_role: 'bot', body: greeting });
+        await convo.update({ last_message_at: new Date() });
+        plain = [bot.get({ plain: true })];
+      } catch {
+        plain = [{ chat_message_id: 0, conversation_id: 0, sender_role: 'bot', body: greeting, created_at: new Date(), updated_at: new Date() }];
+      }
+    } else {
+      plain = [{ chat_message_id: 0, conversation_id: 0, sender_role: 'bot', body: greeting, created_at: new Date(), updated_at: new Date() }];
+    }
   }
+
   return plain;
 };
 
@@ -816,30 +800,26 @@ const appendMyConversationMessage = async (userId, content) => {
     await Message.create({ user_id: userId, message: body, from_role: 'user', channel: 'web', sent_at: new Date() });
   }
 
-  // Auto/AI reply
-  let replyText = generateAutoReplyV2(body);
-  const isFallback = (v) => !v || /^cam on ban da lien he/i.test(String(v).toLowerCase());
-  if (isFallback(replyText) && process.env.OPENAI_API_KEY) {
-    try {
-      const history = await listMyConversationMessages(userId, { limit: 50 }).catch(() => []);
-      replyText = await generateAIReply({ userId, text: body, history: Array.isArray(history) ? history : [] });
-    } catch {}
-  }
-
+  const auto = await generateSmartReply(userId, body);
   let botMsg = null;
-  if (replyText && convo) {
-    try {
-      botMsg = await ChatMessage.create({ conversation_id: convo.conversation_id, sender_role: 'bot', body: replyText });
-      await convo.update({ last_message_at: new Date() });
-    } catch (error) {
-      if (!isMissingTableError(error)) throw error;
+  if (auto) {
+    if (convo) {
+      try {
+        botMsg = await ChatMessage.create({ conversation_id: convo.conversation_id, sender_role: 'bot', body: auto });
+        await convo.update({ last_message_at: new Date() });
+      } catch (error) {
+        if (!isMissingTableError(error)) throw error;
+        await Message.create({ user_id: userId, message: body, reply: auto, from_role: 'bot', channel: 'web', sent_at: new Date() });
+      }
+    } else {
+      await Message.create({ user_id: userId, message: body, reply: auto, from_role: 'bot', channel: 'web', sent_at: new Date() });
     }
   }
 
   return { user: userMsg ? userMsg.get({ plain: true }) : null, bot: botMsg ? botMsg.get({ plain: true }) : null };
 };
 
-// ===== Auto-reply engine (simple keyword rules) =====
+// ===== Auto-reply engine (smart rules) =====
 const normalize = (s) =>
   String(s || '')
     .toLowerCase()
@@ -851,152 +831,121 @@ const containsAny = (s, arr) => {
   return arr.some((kw) => n.includes(normalize(kw)));
 };
 
-// New, richer auto-reply engine aligned with quick-reply menu
-const generateAutoReplyV2 = (content) => {
-  const c = String(content || '')
-  const n = normalize(c)
-  const plain = n.trim()
+const isPhoneLike = (s) => /0\d{9,10}/.test(String(s || ''));
+const isOrderCodeLike = (s) => /#?\d{4,8}/.test(String(s || ''));
 
-  // Numeric choices matching Main Menu
-  if (plain === '1') {
-    return [
-      'Tuyệt! Bạn muốn xem món gì hôm nay? Dưới đây là danh mục phổ biến:',
-      '• Gà Rán Giòn Tan 🍗',
-      '• Burger & Khoai Tây 🍔🍟',
-      '• Combo Siêu Tiết Kiệm 💥',
-      '• Đồ uống & Tráng miệng 🥤🍨',
-      '',
-      'Bạn có thể xem đầy đủ menu tại trang /menu và đặt hàng nhanh nhé!'
-    ].join('\n')
+const greetText = (brand = 'FatFood', botName = 'FatBot') =>
+  `Chao ban! 👋 Toi la ${botName}, tro ly toc do cua ${brand}!
+
+Toi co the giup ban:
+🍕 Xem thuc don & mon moi
+🛵 Kiem tra tinh trang don hang
+🎁 Tim khuyen mai hom nay
+
+Ban chi can go yeu cau va nhan gui, toi se tra loi ngay! Ban can ho tro gi a?`;
+
+const buildOrderStatusText = (status) => {
+  switch (String(status || '').toLowerCase()) {
+    case 'preparing':
+    case 'confirmed':
+      return '🍳 Trang thai: Don hang dang duoc chuan bi trong bep. ⏰ Du kien giao: 25-30 phut tiep theo.';
+    case 'delivering':
+    case 'shipping':
+      return '🛵 Trang thai: Don hang dang tren duong giao den ban. ⏰ Du kien nhan: ~10 phut nua.';
+    case 'completed':
+      return '✅ Don hang da hoan tat. Cam on ban da dat mon!';
+    case 'canceled':
+      return '⚠️ Don hang da bi huy. Neu ban khong thuc hien hanh dong nay, vui long lien he nhan vien.';
+    default:
+      return 'Trang thai don hang dang duoc cap nhat. Ban co the xem trong muc Tai khoan > Don hang.';
   }
-  if (plain === '2') {
-    return [
-      'Hôm nay có ưu đãi hấp dẫn:',
-      '• Combo "Ăn Trưa No Nê" chỉ 59k (1 Gà + 1 Nước + 1 Khoai nhỏ)',
-      '• Mua 1 Tặng 1 Burger Bò vào thứ Ba hàng tuần',
-      '• Freeship cho đơn từ 150k',
-      '',
-      'Bạn muốn đặt ngay deal nào hay xem thêm chi tiết ạ?'
-    ].join('\n')
-  }
-  if (plain === '3') {
-    return 'Bạn vui lòng nhập Số điện thoại hoặc Mã đơn (ví dụ: #F12345) để mình kiểm tra ngay nhé!'
-  }
-  if (plain === '4') {
-    return [
-      'Bạn muốn xem Giờ mở cửa hay tìm cửa hàng gần bạn?',
-      '• Giờ mở cửa: 9:00 - 22:00 mỗi ngày',
-      '• Chia sẻ vị trí để mình gợi ý chi nhánh gần nhất, hoặc xem danh sách tại /stores'
-    ].join('\n')
-  }
-  if (plain === '5') {
-    return 'Mình sẽ kết nối bạn với nhân viên hỗ trợ ngay. Bạn vui lòng chờ trong giây lát nhé!'
+};
+
+const generateSmartReply = async (userId, content) => {
+  const c = String(content || '').trim();
+  const n = normalize(c);
+
+  // Greetings
+  if (containsAny(n, ['xin chao', 'chao', 'hello', 'hi'])) {
+    return greetText();
   }
 
   // Working hours
-  if (containsAny(c, ['mo cua', 'gio mo', 'gio dong', 'thoi gian lam viec', 'open', 'close'])) {
-    return 'Hệ thống mở cửa từ 9:00 đến 22:00 mỗi ngày.'
-  }
-
-  // Menu
-  if (containsAny(c, ['menu', 'thuc don', 'co mon gi', 'goi mon', 'dat hang'])) {
-    return [
-      'Bạn muốn xem danh mục nào ạ?',
-      '• Gà Rán Giòn Tan 🍗',
-      '• Burger & Khoai Tây 🍔🍟',
-      '• Combo Siêu Tiết Kiệm 💥',
-      '• Đồ uống & Tráng miệng 🥤🍨',
-      '',
-      'Xem đầy đủ và đặt nhanh tại /menu'
-    ].join('\n')
-  }
-
-  // Delivery / shipping
-  if (containsAny(c, ['giao hang', 'ship', 'shipper', 'phi van chuyen', 'phi ship'])) {
-    return 'Bọn mình có giao hàng qua đối tác. Phí giao hàng hiển thị ở bước thanh toán, tuỳ khu vực.'
-  }
-
-  // Promotions
-  if (containsAny(c, ['khuyen mai', 'ma giam gia', 'voucher', 'uu dai', 'deal'])) {
-    return [
-      'Ưu đãi hôm nay:',
-      '• Combo "Ăn Trưa No Nê" 59k',
-      '• Mua 1 Tặng 1 Burger Bò (Thứ Ba)',
-      '• Freeship đơn từ 150k',
-      'Bạn muốn đặt ngay hay xem chi tiết?'
-    ].join('\n')
-  }
-
-  // Payment
-  if (containsAny(c, ['thanh toan', 'momo', 'zalo pay', 'zalopay', 'vnpay', 'tien mat'])) {
-    return 'Hỗ trợ thanh toán tiền mặt khi nhận hàng và một số ví/online (tuỳ khu vực).'
-  }
-
-  // Order status (ask for info)
-  if (containsAny(c, ['don hang', 'trang thai don', 'kiem tra don', 'theo doi don', 'ma don'])) {
-    return 'Bạn vui lòng cung cấp Số điện thoại hoặc Mã đơn (ví dụ: #F12345) để mình kiểm tra tình trạng đơn hàng nhé!'
-  }
-
-  // Address / location
-  if (containsAny(c, ['dia chi', 'o dau', 'chi nhanh', 'cua hang gan', 'vi tri'])) {
-    return 'Bạn có thể chia sẻ vị trí (📎) để mình gợi ý chi nhánh gần nhất, hoặc xem danh sách tại /stores. Giờ mở cửa 9:00–22:00.'
-  }
-
-  // Escalate to staff
-  if (containsAny(c, ['gap nhan vien', 'gap nguoi that', 'tro giup'])) {
-    return 'Mình sẽ kết nối bạn với nhân viên hỗ trợ trong giờ 8:00–22:00. Bạn vui lòng chờ trong giây lát nhé!'
-  }
-
-  // Fallback
-  if (c.trim().length >= 1) {
-    return [
-      'Mình chưa hiểu rõ ý bạn 😅',
-      'Bạn có thể chọn một trong các mục sau:',
-      '1) Xem thực đơn 🍔   2) Kiểm tra đơn 🛵   3) Gặp nhân viên 🧑‍💼'
-    ].join('\n')
-  }
-  return null
-}
-const generateAutoReply = (content) => {
-  const c = String(content || '');
-
-  // Working hours
-  if (containsAny(c, ['mo cua', 'mo c⺀a', 'gio mo', 'gio dong', 'thoi gian lam viec', 'open', 'close'])) {
+  if (containsAny(n, ['mo cua', 'gio mo', 'gio dong', 'thoi gian lam viec', 'open', 'close'])) {
     return 'Quan mo cua tu 8:00 den 22:00 moi ngay.';
   }
 
+  // Complaint: food cold / soggy
+  if (containsAny(n, ['nguoi', 'lanh', 'khong nong', 'iu', 'iu xiu', 'miu'])) {
+    return 'Rat xin loi ve trai nghiem chua tot 😥 Do an giao den tay ban phai luon nong hoi. Ban vui long cho toi xin Ma don (vd: #12345) hoac so dien thoai dat hang de ho tro ngay nhe!';
+  }
+
+  // Escalation intents
+  if (containsAny(n, ['hoan tien', 'refund', 'gap nhan vien', 'noi chuyen voi nguoi', 'khong can voucher'])) {
+    return 'Toi da ghi nhan yeu cau cua ban va se ket noi nhan vien ho tro ngay trong 1-2 phut. Vui long doi trong giay lat nhe!';
+  }
+
+  // Accept voucher intents
+  if (containsAny(n, ['dong y', 'ok', 'oke']) && n.includes('voucher')) {
+    return 'Tuyet voi! Voucher Giam 30% (toi da 50.000d) da duoc them vao muc Khuyen mai trong tai khoan cua ban.';
+  }
+
+  // Order tracking (by keyword)
+  if (containsAny(n, ['don hang', 'bao gio', 'khi nao', 'trang thai'])) {
+    try {
+      const last = await Order.findOne({ where: { user_id: userId }, order: [["created_at", "DESC"]] });
+      if (!last) {
+        return 'Toi chua thay don hang gan day cua ban. Ban vui long cung cap Ma don (vd: #12345) hoac so dien thoai dat hang de kiem tra chi tiet nhe!';
+      }
+      return `Da tim thay don hang #${last.order_id}. ${buildOrderStatusText(last.status)}`;
+    } catch {
+      return 'Ban co the xem trang thai don hang trong muc Tai khoan > Don hang.';
+    }
+  }
+
+  // If user provides phone or order code directly
+  if (isPhoneLike(c) || isOrderCodeLike(c)) {
+    try {
+      const last = await Order.findOne({ where: { user_id: userId }, order: [["created_at", "DESC"]] });
+      const base = last ? `Da tim thay don hang #${last.order_id}. ${buildOrderStatusText(last.status)}` : 'Toi se kiem tra thong tin don hang cua ban ngay.';
+      return `${base}\n\nDe den bu su co, chung toi xin gui tang ban Voucher Giam 30% (toi da 50.000d) cho lan dat tiep theo. Ban co dong y nhan voucher khong?`;
+    } catch {
+      return 'Toi se kiem tra thong tin don hang va phan hoi ban trong giay lat nhe.';
+    }
+  }
+
   // Menu
-  if (containsAny(c, ['menu', 'thuc don', 'co mon gi', 'goi mon'])) {
+  if (containsAny(n, ['menu', 'thuc don', 'co mon gi', 'goi mon'])) {
     return 'Ban co the xem menu va dat mon tai trang /menu.';
   }
 
   // Delivery / shipping
-  if (containsAny(c, ['giao hang', 'ship', 'shipper', 'phi van chuyen', 'phi ship'])) {
+  if (containsAny(n, ['giao hang', 'ship', 'shipper', 'phi van chuyen', 'phi ship'])) {
     return 'Chung toi co giao hang qua doi tac. Phi giao hang duoc hien thi o buoc thanh toan tuy khu vuc.';
   }
 
   // Promotions
-  if (containsAny(c, ['khuyen mai', 'ma giam gia', 'voucher', 'uu dai'])) {
-    return 'Cac chuong trinh khuyen mai duoc cap nhat tai trang Khuyen Mai. Vui long kiem tra muc News/Promotions.';
+  if (containsAny(n, ['khuyen mai', 'ma giam gia', 'voucher', 'uu dai'])) {
+    return 'Cac chuong trinh khuyen mai duoc cap nhat tai muc Khuyen Mai (News/Promotions).';
   }
 
   // Payment
-  if (containsAny(c, ['thanh toan', 'momo', 'zalo pay', 'zalopay', 'vnpay', 'tien mat'])) {
+  if (containsAny(n, ['thanh toan', 'momo', 'zalo pay', 'zalopay', 'vnpay', 'tien mat'])) {
     return 'Ho tro thanh toan tien mat khi nhan hang va mot so vi dien tu/online tuy khu vuc.';
   }
 
-  // Order status
-  if (containsAny(c, ['don hang', 'trang thai don', 'kiem tra don'])) {
-    return 'Ban co the xem trang thai don hang trong khu vuc tai khoan > Don hang.';
-  }
-
   // Address / location
-  if (containsAny(c, ['dia chi', 'o dau', 'chi nhanh'])) {
+  if (containsAny(n, ['dia chi', 'o dau', 'chi nhanh'])) {
     return 'Hien chung toi phuc vu online va takeaway trong khung gio 8:00-22:00. Thong tin chi nhanh se duoc cap nhat tren trang chu.';
   }
 
+  // Customization intent (simple acknowledgment)
+  if (containsAny(n, ['them', 'bot', 'khong ', 'khong ca chua', 'them pho mai', 'giam bot'])) {
+    return 'Da ghi nhan yeu cau tuy chinh mon (vd: khong ca chua, them gap doi pho mai +15.000d). Ban vui long xac nhan lai trong trang chi tiet mon khi dat nhe!';
+  }
+
   // Fallback
-  if (c.length >= 4) {
+  if (c.length >= 2) {
     return 'Cam on ban da lien he! Nhan vien se ho tro ban som nhat.';
   }
   return null;

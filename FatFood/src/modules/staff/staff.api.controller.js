@@ -5,6 +5,7 @@ import {
   updateAssignedOrderStatus,
   toggleProductStatus,
   listSupportMessages,
+  getSupportMetrics,
   replySupportMessage,
   listInventoryItems,
   updateInventoryFromStaff,
@@ -12,6 +13,7 @@ import {
   listShiftsForStaff
 } from "./staff.service.js";
 import db from "../../models/index.js";
+import { emitToUser as emitToUserRealtime } from "../../realtime/io.js";
 
 const { User } = db;
 
@@ -129,6 +131,15 @@ const staffSupportMessagesHandler = async (req, res) => {
   }
 };
 
+const staffSupportMetricsHandler = async (req, res) => {
+  try {
+    const metrics = await getSupportMetrics();
+    return res.json({ success: true, data: metrics });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
 const staffReplySupportHandler = async (req, res) => {
   try {
     const staffId = await resolveStaffId(req);
@@ -136,7 +147,12 @@ const staffReplySupportHandler = async (req, res) => {
       return res.status(404).json({ success: false, message: "Khong tim thay nhan vien phu hop" });
     }
     const message = await replySupportMessage(req.params.messageId, staffId, req.body?.reply);
-    return res.json({ success: true, data: toPlain(message) });
+    const plain = toPlain(message);
+    // Notify the original user if available
+    if (plain?.user_id) {
+      emitToUserRealtime(plain.user_id, 'support:replied', plain);
+    }
+    return res.json({ success: true, data: plain });
   } catch (error) {
     return handleError(res, error);
   }
@@ -196,6 +212,7 @@ export {
   staffUpdateOrderStatusHandler,
   staffToggleProductHandler,
   staffSupportMessagesHandler,
+  staffSupportMetricsHandler,
   staffReplySupportHandler,
   staffInventoryHandler,
   staffUpdateInventoryHandler,
