@@ -8,6 +8,7 @@ import LandingTopbar from './LandingTopbar'
 import LandingSidebar from './LandingSidebar'
 import LandingAnchorNav from './LandingAnchorNav'
 import '../styles/MenuPage.css'
+import './LandingPage.css'
 
 const PAGE_SIZE = 9
 const FALLBACK_CARD_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(
@@ -156,6 +157,15 @@ const MenuPage = () => {
     []
   )
 
+  const topbarNavItems = useMemo(
+    () => [
+      { label: 'Trang chu', to: '/' },
+      { label: 'Thuc don', to: '/menu' },
+      { label: 'Gio hang', to: '/cart' }
+    ],
+    []
+  )
+
   const sidebarLinks = useMemo(() => {
     const links = [
       { label: 'Trang chu', to: '/' },
@@ -183,6 +193,7 @@ const MenuPage = () => {
           isAuthenticated={isAuthenticated}
           customerName={customerName}
           onLogout={handleLogout}
+          navItems={topbarNavItems}
           isSticky
           showSidebarToggle
           onSidebarToggle={handleSidebarOpen}

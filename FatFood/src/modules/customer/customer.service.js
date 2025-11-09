@@ -13,7 +13,9 @@ const {
   OrderItem,
   Product,
   Promotion,
-  News
+  News,
+  Cart,
+  CartItem
 } = db;
 
 class CustomerServiceError extends Error {
@@ -577,6 +579,89 @@ const deleteProfile = async (userId) => {
   return toPlain(user);
 };
 
+// ========================= Cart =========================
+const getOrCreateCart = async (userId) => {
+  await ensureCustomerUser(userId);
+  let cart = await Cart.findOne({ where: { user_id: userId } });
+  if (!cart) {
+    cart = await Cart.create({ user_id: userId });
+  }
+  return cart;
+};
+
+const listCart = async (userId) => {
+  const cart = await getOrCreateCart(userId);
+  const items = await CartItem.findAll({
+    where: { cart_id: cart.cart_id },
+    include: [{ model: Product }],
+    order: [["updated_at", "DESC"]]
+  });
+
+  const mapped = items.map((row) => {
+    const plain = row.get({ plain: true });
+    const product = plain.Product ? mapProductImage(plain.Product) : null;
+    const price = Number(product?.price || 0);
+    const qty = Number(plain.quantity || 1);
+    return {
+      cart_item_id: plain.cart_item_id,
+      product_id: plain.product_id,
+      quantity: qty,
+      price,
+      subtotal: Math.round(price * qty * 100) / 100,
+      product
+    };
+  });
+
+  const subtotal = mapped.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
+  const total_items = mapped.reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
+
+  return { items: mapped, subtotal, total_items };
+};
+
+const addItemToCart = async (userId, { productId, quantity } = {}) => {
+  const product = await Product.findByPk(productId);
+  if (!product) {
+    throw new CustomerServiceError("Khong tim thay mon an", 404, "PRODUCT_NOT_FOUND");
+  }
+  const cart = await getOrCreateCart(userId);
+  const qty = Math.max(1, Number(quantity) || 1);
+  const [item, created] = await CartItem.findOrCreate({
+    where: { cart_id: cart.cart_id, product_id: product.product_id },
+    defaults: { quantity: qty }
+  });
+  if (!created) {
+    await item.update({ quantity: (Number(item.quantity) || 0) + qty });
+  }
+  return listCart(userId);
+};
+
+const updateCartItemQuantity = async (userId, productId, quantity) => {
+  const cart = await getOrCreateCart(userId);
+  const item = await CartItem.findOne({ where: { cart_id: cart.cart_id, product_id: productId } });
+  if (!item) {
+    throw new CustomerServiceError("Mon an khong co trong gio", 404, "CART_ITEM_NOT_FOUND");
+  }
+  const qty = Math.max(0, Number(quantity) || 0);
+  if (qty <= 0) {
+    await item.destroy();
+    return listCart(userId);
+  }
+  await item.update({ quantity: qty });
+  return listCart(userId);
+};
+
+const removeCartItem = async (userId, productId) => {
+  const cart = await getOrCreateCart(userId);
+  await CartItem.destroy({ where: { cart_id: cart.cart_id, product_id: productId } });
+  return listCart(userId);
+};
+
+const clearCart = async (userId) => {
+  const cart = await getOrCreateCart(userId);
+  await CartItem.destroy({ where: { cart_id: cart.cart_id } });
+  return listCart(userId);
+};
+
 export {
   CustomerServiceError,
   listActiveProducts,
@@ -589,6 +674,12 @@ export {
   getProfile,
   createProfile,
   updateProfile,
-  deleteProfile
+  deleteProfile,
+  // cart
+  listCart,
+  addItemToCart,
+  updateCartItemQuantity,
+  removeCartItem,
+  clearCart
 };
 

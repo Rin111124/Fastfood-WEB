@@ -7,6 +7,7 @@ import { clearSession, readSession } from '../lib/session'
 import LandingTopbar from './LandingTopbar'
 import LandingSidebar from './LandingSidebar'
 import '../styles/MenuPage.css'
+import './LandingPage.css'
 
 const FALLBACK_CARD_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><rect width="400" height="300" fill="#f3f4f6"/><path d="M140 222h120a12 12 0 0 0 9.9-18.9l-60-90a12 12 0 0 0-19.8 0l-60 90A12 12 0 0 0 140 222zm60-120a30 30 0 1 0 0-60 30 30 0 0 0 0 60z" fill="#d0d5dd"/></svg>'
@@ -91,6 +92,9 @@ const ProductDetailPage = () => {
   const [reviews, setReviews] = useState(() => readStoredReviews(reviewStorageKey))
   const [newReview, setNewReview] = useState({ rating: 5, comment: '' })
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [qty, setQty] = useState(1)
+  const handleQty = (type) =>
+    setQty((prev) => Math.max(1, type === 'inc' ? prev + 1 : prev - 1))
 
   useEffect(() => {
     setSession(readSession())
@@ -240,6 +244,36 @@ const ProductDetailPage = () => {
 
   const heroImage = resolveHeroImage(product)
   const cardImage = buildImageSrc(product)
+  const galleryImages = useMemo(() => {
+    if (!product) return []
+    const list = [resolveHeroImage(product), buildImageSrc(product)].filter(Boolean)
+    const uniq = []
+    list.forEach((src) => {
+      if (src && !uniq.includes(src)) uniq.push(src)
+    })
+    return uniq
+  }, [product])
+  const [activeIdx, setActiveIdx] = useState(0)
+  useEffect(() => {
+    setActiveIdx(0)
+  }, [galleryImages.length])
+
+  const handleAddToCart = async () => {
+    if (!product) return
+    if (!isAuthenticated) {
+      navigate('/login', { replace: false, state: { returnTo: `/menu/${encodeURIComponent(decodedProductParam)}` } })
+      return
+    }
+    try {
+      const productId = product.product_id || product.id
+      await customerApi.addToCart({ productId, quantity: qty })
+      setOrderFeedback('Da them vao gio hang!')
+    } catch (err) {
+      setOrderFeedback(err?.message || 'Khong the them vao gio. Vui long thu lai.')
+    } finally {
+      window.setTimeout(() => setOrderFeedback(''), 2500)
+    }
+  }
 
   return (
     <div className="landing-new menu-page product-detail-page">
@@ -337,151 +371,266 @@ const ProductDetailPage = () => {
               </p>
             </div>
           ) : (
-            <div className="row g-4">
-              <div className="col-12 col-lg-5">
-                <article className="card h-100 shadow-sm border-0 product-detail__card">
-                  <div className="ratio ratio-4x3 product-detail__image-wrapper">
-                    <img
-                      src={cardImage}
-                      alt={product.name}
-                      className="product-detail__image"
-                      onError={(event) => {
-                        event.currentTarget.src = FALLBACK_CARD_IMAGE
-                      }}
-                    />
-                  </div>
-                  <div className="card-body">
-                    <h2 className="h4">{product.name}</h2>
-                    <p className="text-muted mb-3">{product.description || 'Mon ngon dang duoc cap nhat mo ta.'}</p>
-                    <div className="d-flex align-items-center gap-3 mb-3 flex-wrap">
-                      <span className="fs-4 fw-bold text-primary">{formatCurrency(product.price)}</span>
-                      <span className="badge bg-warning-subtle text-warning-emphasis">
-                        {averageRating ? `${averageRating}/5` : 'Chua co danh gia'}
-                      </span>
-                      <span className="badge bg-secondary-subtle text-secondary-emphasis">
-                        {product.food_type ? `Loai: ${product.food_type}` : 'Phan loai: Dang cap nhat'}
-                      </span>
+            <>
+              <div className="row g-4 g-lg-5 align-items-start">
+                <div className="col-12 col-lg-6 col-xl-5">
+                  <article className="card shadow-sm border-0 rounded-4">
+                    <div className="ratio ratio-4x3 bg-light rounded-top">
+                      <img
+                        src={galleryImages[activeIdx] || cardImage}
+                        alt={product.name}
+                        className="pd-main-img"
+                        onError={(event) => {
+                          event.currentTarget.src = FALLBACK_CARD_IMAGE
+                        }}
+                      />
                     </div>
-                    {Array.isArray(product.options) && product.options.length > 0 && (
-                      <div className="product-detail__options">
-                        <h3 className="h6 text-uppercase text-muted">Lua chon kem theo</h3>
-                        <ul className="list-unstyled mb-0">
-                          {product.options.map((option) => (
-                            <li key={option.option_id || `${option.group_name}-${option.option_name}`}>
-                              <span className="fw-semibold">{option.group_name}:</span>{' '}
-                              <span>{option.option_name}</span>
-                              {Number(option.price_adjustment) ? (
-                                <span className="text-primary fw-semibold ms-1">
-                                  +{formatCurrency(option.price_adjustment)}
-                                </span>
-                              ) : null}
-                            </li>
-                          ))}
-                        </ul>
+                    {galleryImages.length > 1 && (
+                      <div className="d-flex gap-2 p-3 border-top pd-thumbs">
+                        {galleryImages.slice(0, 4).map((src, idx) => (
+                          <button
+                            type="button"
+                            key={idx}
+                            className={`btn p-0 border-0 pd-thumb ${activeIdx === idx ? 'active' : ''}`}
+                            onClick={() => setActiveIdx(idx)}
+                            aria-label={`Xem hinh ${idx + 1}`}
+                          >
+                            <div className="ratio ratio-1x1 rounded overflow-hidden bg-light">
+                              <img
+                                src={src}
+                                alt=""
+                                className="pd-thumb-img"
+                                onError={(event) => {
+                                  event.currentTarget.src = FALLBACK_CARD_IMAGE
+                                }}
+                              />
+                            </div>
+                          </button>
+                        ))}
                       </div>
                     )}
-                  </div>
-                </article>
-              </div>
+                  </article>
+                </div>
 
-              <div className="col-12 col-lg-7">
-                <section className="product-detail__reviews card h-100 shadow-sm border-0" id="reviews">
-                  <div className="card-body">
-                    <header className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
-                      <div>
-                        <h2 className="h5 mb-1">Danh gia va nhan xet</h2>
-                        <p className="mb-0 text-muted">
-                          {reviews.length
-                            ? `Co ${reviews.length} danh gia tu khach hang`
-                            : 'Chua co danh gia nao. Hay la nguoi dau tien!'}
-                        </p>
+                <div className="col-12 col-lg-6 col-xl-7">
+                  <article className="card shadow-sm border-0 rounded-4">
+                    <div className="card-body">
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <h1 className="h3 mb-0">{product.name}</h1>
+                        <span className="badge bg-secondary-subtle text-secondary-emphasis">
+                          {product.food_type || 'Mac dinh'}
+                        </span>
                       </div>
-                      <div className="product-detail__rating-display">
-                        <div className="display-6 fw-bold mb-0">{averageRating ? averageRating : '—'}</div>
-                        <div className="text-muted small text-uppercase">Diem trung binh</div>
-                      </div>
-                    </header>
 
-                    <form className="product-detail__review-form" onSubmit={handleReviewSubmit}>
-                      <div className="row g-3 align-items-center">
-                        <div className="col-12 col-sm-4 col-lg-3">
-                          <label htmlFor="reviewRating" className="form-label fw-semibold mb-0">
-                            Danh gia
-                          </label>
-                          <select
-                            id="reviewRating"
-                            className="form-select"
-                            value={newReview.rating}
-                            onChange={(event) =>
-                              setNewReview((previous) => ({ ...previous, rating: Number(event.target.value) }))
-                            }
-                          >
-                            {[5, 4, 3, 2, 1].map((value) => (
-                              <option key={value} value={value}>
-                                {value} sao
-                              </option>
+                      <div className="d-flex align-items-center gap-2 text-warning mb-3">
+                        {Array.from({ length: 5 }).map((_, index) => {
+                          const filled = index < Math.round(averageRating)
+                          return (
+                            <i
+                              key={index}
+                              className={`bi ${filled ? 'bi-star-fill' : 'bi-star'} `}
+                              aria-hidden="true"
+                            />
+                          )
+                        })}
+                        <span className="text-muted small">({reviews.length} danh gia)</span>
+                      </div>
+
+                      <div className="fs-3 fw-bold text-primary mb-3">
+                        {formatCurrency(product.price)}
+                      </div>
+
+                      <p className="text-muted">
+                        {product.description || 'Mon ngon dang duoc cap nhat mo ta.'}
+                      </p>
+
+                      {Array.isArray(product.options) && product.options.length > 0 && (
+                        <div className="product-detail__options mt-3">
+                          <h3 className="h6 text-uppercase text-muted">Lua chon kem theo</h3>
+                          <ul className="list-unstyled mb-0">
+                            {product.options.map((option) => (
+                              <li key={option.option_id || `${option.group_name}-${option.option_name}`}>
+                                <span className="fw-semibold">{option.group_name}:</span>{' '}
+                                <span>{option.option_name}</span>
+                                {Number(option.price_adjustment) ? (
+                                  <span className="text-primary fw-semibold ms-1">
+                                    +{formatCurrency(option.price_adjustment)}
+                                  </span>
+                                ) : null}
+                              </li>
                             ))}
-                          </select>
+                          </ul>
                         </div>
-                        <div className="col-12 col-sm-8 col-lg-7">
-                          <label htmlFor="reviewComment" className="form-label fw-semibold">
-                            Cam nhan cua ban
-                          </label>
-                          <textarea
-                            id="reviewComment"
-                            className="form-control"
-                            rows={2}
-                            maxLength={500}
-                            value={newReview.comment}
-                            onChange={(event) =>
-                              setNewReview((previous) => ({ ...previous, comment: event.target.value }))
-                            }
-                            placeholder="Chia se trai nghiem ve mon an nay..."
+                      )}
+
+                      <div className="d-flex align-items-center gap-2 my-4">
+                        <div className="input-group" style={{ maxWidth: '180px' }}>
+                          <button
+                            className="btn btn-outline-secondary"
+                            type="button"
+                            onClick={() => handleQty('dec')}
+                            aria-label="Giam so luong"
+                          >
+                            <i className="bi bi-dash-lg" aria-hidden="true" />
+                          </button>
+                          <input
+                            type="text"
+                            className="form-control text-center"
+                            value={qty}
+                            readOnly
+                            aria-label="So luong"
                           />
-                        </div>
-                        <div className="col-12 col-lg-2 d-grid">
-                          <button type="submit" className="btn btn-primary">
-                            Gui
+                          <button
+                            className="btn btn-outline-secondary"
+                            type="button"
+                            onClick={() => handleQty('inc')}
+                            aria-label="Tang so luong"
+                          >
+                            <i className="bi bi-plus-lg" aria-hidden="true" />
                           </button>
                         </div>
                       </div>
-                    </form>
 
-                    <hr className="my-4" />
-
-                    <div className="product-detail__review-list">
-                      {reviews.length === 0 ? (
-                        <p className="text-muted fst-italic">Chua co danh gia nao duoc tao.</p>
-                      ) : (
-                        reviews.map((review) => (
-                          <article key={review.id} className="product-detail__review-item">
-                            <header className="d-flex align-items-center gap-3 mb-2">
-                              <div className="product-detail__review-rating">
-                                {Array.from({ length: 5 }).map((_, index) => {
-                                  const ratingValue = index + 1
-                                  const filled = ratingValue <= Number(review.rating || 0)
-                                  return (
-                                    <i
-                                      key={ratingValue}
-                                      className={`bi ${filled ? 'bi-star-fill text-warning' : 'bi-star text-muted'}`}
-                                      aria-hidden="true"
-                                    />
-                                  )
-                                })}
-                              </div>
-                              <div className="small text-muted">
-                                {formatDateTime(review.createdAt)} · {review.author || 'Khach hang'}
-                              </div>
-                            </header>
-                            <p className="mb-0">{review.comment}</p>
-                          </article>
-                        ))
-                      )}
+                      <div className="d-flex flex-wrap gap-2">
+                        <button type="button" className="btn btn-primary" onClick={handleAddToCart}>
+                          Them vao gio
+                        </button>
+                        <Link to="/menu" className="btn btn-outline-secondary">
+                          Quay lai thuc don
+                        </Link>
+                      </div>
                     </div>
-                  </div>
-                </section>
+                  </article>
+                </div>
               </div>
-            </div>
+
+              <div className="row g-4 mt-2 mt-lg-4">
+                <div className="col-12 col-lg-7">
+                  <section className="product-detail__reviews card h-100 shadow-sm border-0" id="reviews">
+                    <div className="card-body">
+                      <header className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+                        <div>
+                          <h2 className="h5 mb-1">Danh gia va nhan xet</h2>
+                          <p className="mb-0 text-muted">
+                            {reviews.length
+                              ? `Co ${reviews.length} danh gia tu khach hang`
+                              : 'Chua co danh gia nao. Hay la nguoi dau tien!'}
+                          </p>
+                        </div>
+                        <div className="product-detail__rating-display">
+                          <div className="display-6 fw-bold mb-0">{averageRating ? averageRating : '—'}</div>
+                          <div className="text-muted small text-uppercase">Diem trung binh</div>
+                        </div>
+                      </header>
+
+                      <form className="product-detail__review-form" onSubmit={handleReviewSubmit}>
+                        <div className="row g-3 align-items-center">
+                          <div className="col-12 col-sm-4 col-lg-3">
+                            <label htmlFor="reviewRating" className="form-label fw-semibold mb-0">
+                              Danh gia
+                            </label>
+                            <select
+                              id="reviewRating"
+                              className="form-select"
+                              value={newReview.rating}
+                              onChange={(event) =>
+                                setNewReview((previous) => ({ ...previous, rating: Number(event.target.value) }))
+                              }
+                            >
+                              {[5, 4, 3, 2, 1].map((value) => (
+                                <option key={value} value={value}>
+                                  {value} sao
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="col-12 col-sm-8 col-lg-7">
+                            <label htmlFor="reviewComment" className="form-label fw-semibold">
+                              Cam nhan cua ban
+                            </label>
+                            <textarea
+                              id="reviewComment"
+                              className="form-control"
+                              rows={2}
+                              maxLength={500}
+                              value={newReview.comment}
+                              onChange={(event) =>
+                                setNewReview((previous) => ({ ...previous, comment: event.target.value }))
+                              }
+                              placeholder="Chia se trai nghiem ve mon an nay..."
+                            />
+                          </div>
+                          <div className="col-12 col-lg-2 d-grid">
+                            <button type="submit" className="btn btn-primary">
+                              Gui
+                            </button>
+                          </div>
+                        </div>
+                      </form>
+
+                      <hr className="my-4" />
+
+                      <div className="product-detail__review-list">
+                        {reviews.length === 0 ? (
+                          <p className="text-muted fst-italic">Chua co danh gia nao duoc tao.</p>
+                        ) : (
+                          reviews.map((review) => (
+                            <article key={review.id} className="product-detail__review-item">
+                              <header className="d-flex align-items-center gap-3 mb-2">
+                                <div className="product-detail__review-rating">
+                                  {Array.from({ length: 5 }).map((_, index) => {
+                                    const ratingValue = index + 1
+                                    const filled = ratingValue <= Number(review.rating || 0)
+                                    return (
+                                      <i
+                                        key={ratingValue}
+                                        className={`bi ${filled ? 'bi-star-fill text-warning' : 'bi-star text-muted'}`}
+                                        aria-hidden="true"
+                                      />
+                                    )
+                                  })}
+                                </div>
+                                <div className="small text-muted">
+                                  {formatDateTime(review.createdAt)} · {review.author || 'Khach hang'}
+                                </div>
+                              </header>
+                              <p className="mb-0">{review.comment}</p>
+                            </article>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                </div>
+                <div className="col-12 col-lg-5">
+                  <section className="card h-100 shadow-sm border-0">
+                    <div className="card-body">
+                      <h2 className="h5 mb-3">Thong tin them</h2>
+                      <ul className="list-unstyled mb-0">
+                        <li className="d-flex align-items-start gap-2 mb-2">
+                          <i className="bi bi-check2-circle text-success mt-1" aria-hidden="true" />
+                          <span>Nguyen lieu tuoi moi, che bien trong ngay</span>
+                        </li>
+                        <li className="d-flex align-items-start gap-2 mb-2">
+                          <i className="bi bi-check2-circle text-success mt-1" aria-hidden="true" />
+                          <span>Phu hop cho bua trua hoac bua toi</span>
+                        </li>
+                        <li className="d-flex align-items-start gap-2 mb-2">
+                          <i className="bi bi-check2-circle text-success mt-1" aria-hidden="true" />
+                          <span>Thich hop di kem do uong lanh</span>
+                        </li>
+                        {product?.category_name ? (
+                          <li className="d-flex align-items-start gap-2 mb-2">
+                            <i className="bi bi-tag text-muted mt-1" aria-hidden="true" />
+                            <span>Danh muc: {product.category_name}</span>
+                          </li>
+                        ) : null}
+                      </ul>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </main>

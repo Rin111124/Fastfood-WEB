@@ -10,7 +10,13 @@ import {
   getProfileHandler,
   createProfileHandler,
   updateProfileHandler,
-  deleteProfileHandler
+  deleteProfileHandler,
+  // cart
+  getCartHandler,
+  addCartItemHandler,
+  updateCartItemHandler,
+  removeCartItemHandler,
+  clearCartHandler
 } from "./customer.api.controller.js";
 import { requireRoles } from "../../middleware/authMiddleware.js";
 
@@ -31,6 +37,13 @@ router.get("/orders", listOrdersHandler);
 router.post("/orders", createOrderHandler);
 router.get("/orders/:orderId", getOrderHandler);
 router.post("/orders/:orderId/cancel", cancelOrderHandler);
+
+// Cart endpoints (authenticated)
+router.get("/cart", getCartHandler);
+router.post("/cart/items", addCartItemHandler);
+router.patch("/cart/items/:productId", updateCartItemHandler);
+router.delete("/cart/items/:productId", removeCartItemHandler);
+router.post("/cart/clear", clearCartHandler);
 
 export default router;
 

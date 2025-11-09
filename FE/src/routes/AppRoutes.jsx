@@ -9,6 +9,7 @@ import LandingPage from '../components/LandingPage'
 import Landing from '../features/public/pages/Landing'
 import MenuPage from '../components/Menupage'
 import ProductDetailPage from '../components/ProductDetailPage'
+import CartPage from '../components/CartPage'
 import CustomerLanding from '../features/customer/pages/CustomerLanding'
 import AdminDashboard from '../features/admin/pages/AdminDashboard'
 import AdminUsers from '../features/admin/pages/AdminUsers'
@@ -35,6 +36,7 @@ const AppRoutes = () => (
     <Route path="/landing" element={<Landing />} />
     <Route path="/menu" element={<MenuPage />} />
     <Route path="/menu/:productId" element={<ProductDetailPage />} />
+    <Route path="/cart" element={<CartPage />} />
     <Route path="/login" element={<Login />} />
     <Route path="/signup" element={<Signup />} />
 

@@ -12,7 +12,13 @@ import {
   getProfile,
   createProfile,
   updateProfile,
-  deleteProfile
+  deleteProfile,
+  // cart services
+  listCart,
+  addItemToCart,
+  updateCartItemQuantity,
+  removeCartItem,
+  clearCart
 } from "./customer.service.js";
 
 const handleError = (res, error) => {
@@ -169,6 +175,61 @@ const deleteProfileHandler = async (req, res) => {
   }
 };
 
+// ============== Cart Handlers ==============
+const getCartHandler = async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const data = await listCart(userId);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+const addCartItemHandler = async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const { productId, quantity } = req.body || {};
+    const data = await addItemToCart(userId, { productId, quantity });
+    return res.status(201).json({ success: true, data });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+const updateCartItemHandler = async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const productId = Number(req.params.productId);
+    const { quantity } = req.body || {};
+    const data = await updateCartItemQuantity(userId, productId, quantity);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+const removeCartItemHandler = async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const productId = Number(req.params.productId);
+    const data = await removeCartItem(userId, productId);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+const clearCartHandler = async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const data = await clearCart(userId);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
 export {
   listProductsHandler,
   listNewsHandler,
@@ -180,7 +241,13 @@ export {
   getProfileHandler,
   createProfileHandler,
   updateProfileHandler,
-  deleteProfileHandler
+  deleteProfileHandler,
+  // cart
+  getCartHandler,
+  addCartItemHandler,
+  updateCartItemHandler,
+  removeCartItemHandler,
+  clearCartHandler
 };
 
 

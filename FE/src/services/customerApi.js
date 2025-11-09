@@ -63,7 +63,13 @@ export const customerApi = {
   },
   getOrder: (orderId) => get(`/api/customer/orders/${orderId}`),
   createOrder: (payload) => post('/api/customer/orders', payload),
-  cancelOrder: (orderId) => post(`/api/customer/orders/${orderId}/cancel`, {})
+  cancelOrder: (orderId) => post(`/api/customer/orders/${orderId}/cancel`, {}),
+  // cart
+  getCart: () => get('/api/customer/cart'),
+  addToCart: ({ productId, quantity } = {}) => post('/api/customer/cart/items', { productId, quantity }),
+  updateCartItem: ({ productId, quantity }) => patch(`/api/customer/cart/items/${productId}`, { quantity }),
+  removeCartItem: (productId) => apiFetch(`/api/customer/cart/items/${productId}`, { method: 'DELETE' }).then(parseJson),
+  clearCart: () => post('/api/customer/cart/clear', {})
 }
 
 export default customerApi
