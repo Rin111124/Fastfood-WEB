@@ -2,6 +2,12 @@
 
 import crypto from "crypto";
 import db from "../../models/index.js";
+import {
+  assignOrderToOnDutyStaff,
+  clearCustomerCart,
+  recordPaymentActivity
+} from "../order/orderFulfillment.service.js";
+import { preparePendingOrderPayload, createOrderFromPendingPayload } from "./pendingOrder.helper.js";
 
 const { Order, Payment, sequelize } = db;
 
@@ -73,17 +79,58 @@ const formatDateTimeYMDHMS = (date = new Date()) => {
 
 const buildTxnRef = (orderId) => `${orderId}-${formatDateTimeYMDHMS()}`;
 
-const createVnpayPaymentUrl = async (req, { orderId, bankCode, locale, withDebug = false }) => {
-  const { tmnCode, secretKey, vnpUrl, returnUrl, ipnUrl } = ensureVnpayEnv();
-
-  const order = await Order.findByPk(orderId);
-  if (!order) throw new PaymentServiceError("Khong tim thay don hang", 404, "ORDER_NOT_FOUND", { orderId });
-  if (["canceled", "refunded"].includes(order.status)) {
-    throw new PaymentServiceError("Don hang khong hop le de thanh toan", 400, "ORDER_INVALID_STATUS", { status: order.status });
+const ensureOrderAccessible = (order, { orderId, userId, role }) => {
+  if (!order) {
+    throw new PaymentServiceError("Khong tim thay don hang", 404, "ORDER_NOT_FOUND", { orderId });
   }
 
-  const txnRef = buildTxnRef(orderId);
-  const amount = Number(order.total_amount);
+  if (["canceled", "refunded"].includes(order.status)) {
+    throw new PaymentServiceError("Don hang khong hop le de thanh toan", 400, "ORDER_INVALID_STATUS", {
+      status: order.status,
+      orderId
+    });
+  }
+
+  const normalizedRole = (role || "").toLowerCase();
+  if (normalizedRole === "admin") {
+    return order;
+  }
+
+  const normalizedUserId = Number(userId);
+  if (!Number.isFinite(normalizedUserId) || Number(order.user_id) !== normalizedUserId) {
+    throw new PaymentServiceError("Khong du quyen thanh toan don hang nay", 403, "ORDER_FORBIDDEN", {
+      orderId
+    });
+  }
+  return order;
+};
+
+const createVnpayPaymentUrl = async (req, { orderId, bankCode, locale, withDebug = false, userId, role }, options = {}) => {
+  const { tmnCode, secretKey, vnpUrl, returnUrl } = ensureVnpayEnv();
+
+  let order = null;
+  let pendingOrder = null;
+  if (orderId) {
+    order = await Order.findByPk(orderId);
+    ensureOrderAccessible(order, { orderId, userId, role });
+  } else if (options.pendingOrder) {
+    try {
+      pendingOrder = await preparePendingOrderPayload(options.pendingOrder, {
+        userId,
+        defaultPaymentMethod: "vnpay"
+      });
+    } catch (error) {
+      throw new PaymentServiceError(error.message, 422, error.code || "PENDING_ORDER_INVALID");
+    }
+  } else {
+    throw new PaymentServiceError("Thieu orderId hoac orderPayload", 400, "ORDER_ID_REQUIRED");
+  }
+
+  const amount = Number(order ? order.total_amount : pendingOrder.totalAmount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new PaymentServiceError("So tien khong hop le", 400, "VNPAY_INVALID_AMOUNT");
+  }
+  const txnRef = buildTxnRef(order ? order.order_id : Date.now());
   const ipAddr = getClientIp(req);
   const createDate = formatDateTimeYMDHMS();
 
@@ -94,7 +141,7 @@ const createVnpayPaymentUrl = async (req, { orderId, bankCode, locale, withDebug
     vnp_Locale: locale || "vn",
     vnp_CurrCode: "VND",
     vnp_TxnRef: txnRef,
-    vnp_OrderInfo: `Thanh toan cho ma GD:${orderId}`,
+    vnp_OrderInfo: `Thanh toan cho ma GD:${order ? order.order_id : "pending"}`,
     vnp_OrderType: "other",
     vnp_Amount: Math.round(amount * 100),
     vnp_ReturnUrl: returnUrl,
@@ -115,13 +162,16 @@ const createVnpayPaymentUrl = async (req, { orderId, bankCode, locale, withDebug
   const payUrl = `${vnpUrl}?${stringifyNoEncode({ ...sorted, vnp_SecureHash })}`;
 
   const payment = await Payment.create({
-    order_id: orderId,
+    order_id: order ? order.order_id : null,
     provider: "vnpay",
     amount,
     currency: "VND",
     txn_ref: txnRef,
     status: "initiated",
-    meta: { created_at: new Date().toISOString() }
+    meta: {
+      created_at: new Date().toISOString(),
+      ...(pendingOrder ? { pending_order: pendingOrder } : {})
+    }
   });
 
   const response = { payUrl, txnRef };
@@ -135,7 +185,7 @@ const verifyVnpReturn = async (query) => {
   const { secretKey } = ensureVnpayEnv();
   const vnpParams = { ...query };
   const secureHash = vnpParams["vnp_SecureHash"];
-  delete vnpParams["vnp_SecureHash"]; // keep vnp_SecureHashType if present out of sign
+  delete vnpParams["vnp_SecureHash"];
   delete vnpParams["vnp_SecureHashType"];
 
   const sorted = sortObject(vnpParams);
@@ -156,26 +206,31 @@ const verifyVnpReturn = async (query) => {
     throw new PaymentServiceError("Khong tim thay giao dich", 404, "PAYMENT_NOT_FOUND", { txnRef });
   }
 
+  // Only log return payload for UX feedback; final status is handled by handleVnpIpn().
+  const meta = {
+    ...(payment.meta || {}),
+    vnp_return: vnpParams,
+    vnp_return_verified: isValidSignature,
+    vnp_return_at: new Date().toISOString()
+  };
+
+  await payment.update({ meta });
+
   if (!isValidSignature) {
-    await payment.update({ status: "failed", meta: { ...(payment.meta || {}), reason: "INVALID_SIGNATURE", vnp: vnpParams } });
-    return { ok: false, code: "97", message: "Chu ky khong hop le" };
+    return { ok: false, code: "97", message: "Chu ky khong hop le", txnRef, orderId: payment.order_id };
   }
 
   if (rspCode === "00") {
-    await sequelize.transaction(async (t) => {
-      await payment.update({ status: "success", meta: { ...(payment.meta || {}), vnp: vnpParams } }, { transaction: t });
-      if (payment.order_id) {
-        const order = await Order.findByPk(payment.order_id, { transaction: t });
-        if (order && order.status !== "paid" && order.status !== "completed") {
-          await order.update({ status: "paid" }, { transaction: t });
-        }
-      }
-    });
-    return { ok: true, code: rspCode, message: "Thanh toan thanh cong" };
+    return {
+      ok: true,
+      code: rspCode,
+      message: "Thanh toan hop le. Chung toi se xac nhan khi VNPAY gui IPN.",
+      txnRef,
+      orderId: payment.order_id
+    };
   }
 
-  await payment.update({ status: "failed", meta: { ...(payment.meta || {}), vnp: vnpParams } });
-  return { ok: false, code: rspCode, message: "Thanh toan that bai" };
+  return { ok: false, code: rspCode, message: "Thanh toan that bai", txnRef, orderId: payment.order_id };
 };
 
 const handleVnpIpn = async (query) => {
@@ -217,15 +272,43 @@ const handleVnpIpn = async (query) => {
   }
 
   if (rspCode === "00") {
+    let orderUserId = null;
     await sequelize.transaction(async (t) => {
-      await payment.update({ status: "success", meta: { ...(payment.meta || {}), vnp: vnpParams } }, { transaction: t });
-      if (payment.order_id) {
-        const order = await Order.findByPk(payment.order_id, { transaction: t });
-        if (order && order.status !== "paid" && order.status !== "completed") {
-          await order.update({ status: "paid" }, { transaction: t });
+      let order = null;
+      let needsFulfillment = false;
+      if (!payment.order_id && payment.meta?.pending_order) {
+        order = await createOrderFromPendingPayload(payment.meta.pending_order, { transaction: t });
+        payment.order_id = order.order_id;
+        needsFulfillment = true;
+      } else if (payment.order_id) {
+        order = await Order.findByPk(payment.order_id, { transaction: t });
+      }
+      await payment.update(
+        {
+          status: "success",
+          order_id: payment.order_id,
+          meta: { ...(payment.meta || {}), vnp: vnpParams }
+        },
+        { transaction: t }
+      );
+      if (order) {
+        if (needsFulfillment || (order.status !== "paid" && order.status !== "completed")) {
+          if (order.status !== "paid" && order.status !== "completed") {
+            await order.update({ status: "paid" }, { transaction: t });
+          }
+          await assignOrderToOnDutyStaff(order, { transaction: t });
+          await recordPaymentActivity(order, "vnpay", {
+            paymentId: payment.payment_id,
+            txn_ref: payment.txn_ref,
+            vnpTxnRef: txnRef
+          });
         }
+        orderUserId = order.user_id;
       }
     });
+    if (orderUserId) {
+      await clearCustomerCart(orderUserId);
+    }
     return { RspCode: "00", Message: "Confirm Success" };
   }
 

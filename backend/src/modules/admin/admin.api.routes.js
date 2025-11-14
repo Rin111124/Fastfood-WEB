@@ -28,6 +28,7 @@ import {
   updateProductOptionHandler,
   toggleProductOptionAvailabilityHandler,
   deleteProductOptionHandler,
+  createStaffOrderHandler,
   listOrdersHandler,
   listPaymentsHandler,
   assignOrderHandler,
@@ -59,6 +60,9 @@ const router = express.Router();
 // Apply error handling middleware
 router.use(handleMulterError);
 router.use(handleGeneralError);
+
+// Staff & admin order creation endpoint (POS)
+router.post("/orders", requireRoles("staff", "admin"), createStaffOrderHandler);
 
 router.use(requireRoles("admin"));
 

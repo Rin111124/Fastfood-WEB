@@ -261,44 +261,44 @@ const CustomerDashboard = () => {
       )}
 
       {loading ? (
-        <Spinner message="Dang tai bang dieu khien cua ban..." />
+        <Spinner message="Đang tải bảng điều khiển của bạn..." />
       ) : (
         <>
           <div className="row g-4 mb-4">
             <div className="col-12 col-md-6 col-lg-3">
               <StatCard
-                title="Tong chi tieu"
+                title="Tổng chi tiêu"
                 value={formatCurrency(orderSummary.totalSpent)}
                 delta={orderSummary.averageOrderValue ? formatCurrency(orderSummary.averageOrderValue) : undefined}
-                deltaLabel="Gia tri don trung binh"
+                deltaLabel="Giá trị đơn trung bình"
                 icon="bi-wallet2"
                 variant="primary"
               />
             </div>
             <div className="col-12 col-md-6 col-lg-3">
               <StatCard
-                title="Don da hoan tat"
+                title="Đơn đã hoàn tất"
                 value={formatNumber(orderSummary.completedOrders)}
                 delta={orderSummary.totalOrders ? `${Math.round((orderSummary.completedOrders / orderSummary.totalOrders) * 100)}%` : '0%'}
-                deltaLabel="Ti le hoan tat"
+                deltaLabel="Tỷ lệ hoàn tất"
                 icon="bi-bag-check-fill"
                 variant="success"
               />
             </div>
             <div className="col-12 col-md-6 col-lg-3">
               <StatCard
-                title="Don dang xu ly"
+                title="Đơn đang xử lý"
                 value={formatNumber(orderSummary.activeOrders)}
-                deltaLabel="Dang cho nha bep"
+                deltaLabel="Đang chờ nhà bếp"
                 icon="bi-hourglass-split"
                 variant="info"
               />
             </div>
             <div className="col-12 col-md-6 col-lg-3">
               <StatCard
-                title="Don bi huy"
+                title="Đơn bị huỷ"
                 value={formatNumber(orderSummary.canceledOrders)}
-                deltaLabel="Trong 90 ngay gan nhat"
+                deltaLabel="Trong 90 ngày gần nhất"
                 icon="bi-x-circle-fill"
                 variant="warning"
               />
@@ -333,20 +333,20 @@ const CustomerDashboard = () => {
                       />
                     </div>
                     <div className="col-md-6">
-                      <label className="form-label text-muted small text-uppercase">Gioi tinh</label>
+                      <label className="form-label text-muted small text-uppercase">Giới tính</label>
                       <select
                         className="form-select"
                         value={profileForm.gender}
                         onChange={(event) => handleProfileChange('gender', event.target.value)}
                       >
                         <option value="male">Nam</option>
-                        <option value="female">Nu</option>
-                        <option value="other">Khac</option>
-                        <option value="unknown">Khong tiet lo</option>
+                        <option value="female">Nữ</option>
+                        <option value="other">Khác</option>
+                        <option value="unknown">Không tiết lộ</option>
                       </select>
                     </div>
                     <div className="col-md-6">
-                      <label className="form-label text-muted small text-uppercase">Dia chi giao hang</label>
+                      <label className="form-label text-muted small text-uppercase">Địa chỉ giao hàng</label>
                       <input
                         type="text"
                         className="form-control"
@@ -356,7 +356,7 @@ const CustomerDashboard = () => {
                     </div>
                     <div className="col-12 d-flex justify-content-end">
                       <button type="submit" className="btn btn-outline-primary" disabled={profileSaving}>
-                        {profileSaving ? 'Dang luu...' : 'Luu thay doi'}
+                        {profileSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
                       </button>
                     </div>
                   </form>
@@ -365,23 +365,23 @@ const CustomerDashboard = () => {
             </div>
             <div className="col-lg-7">
               <div className="card shadow-sm border-0 h-100">
-                <div className="card-header bg-white border-0 pb-0 d-flex justify-content-between align-items-center">
-                  <div>
-                    <p className="text-muted text-uppercase small fw-semibold mb-1">Dat mon nhanh</p>
-                    <h5 className="mb-0">Dat don moi</h5>
-                  </div>
-                </div>
+                    <div className="card-header bg-white border-0 pb-0 d-flex justify-content-between align-items-center">
+                      <div>
+                        <p className="text-muted text-uppercase small fw-semibold mb-1">Đặt món nhanh</p>
+                        <h5 className="mb-0">Đặt đơn mới</h5>
+                      </div>
+                    </div>
                 <div className="card-body">
                   <form className="row g-3" onSubmit={handleOrderSubmit}>
                     <div className="col-md-5">
-                      <label className="form-label text-muted small text-uppercase">Mon an</label>
+                        <label className="form-label text-muted small text-uppercase">Món ăn</label>
                       <select
                         className="form-select"
                         value={orderForm.productId}
                         onChange={(event) => handleOrderChange('productId', event.target.value)}
                         required
                       >
-                        <option value="">-- Chon mon an --</option>
+                          <option value="">-- Chọn món ăn --</option>
                         {productOptions.map((product) => (
                           <option key={product.product_id} value={product.product_id}>
                             {product.name} ({formatCurrency(product.price)})
@@ -390,7 +390,7 @@ const CustomerDashboard = () => {
                       </select>
                     </div>
                     <div className="col-md-3">
-                      <label className="form-label text-muted small text-uppercase">So luong</label>
+                        <label className="form-label text-muted small text-uppercase">Số lượng</label>
                       <input
                         type="number"
                         className="form-control"
@@ -401,7 +401,7 @@ const CustomerDashboard = () => {
                       />
                     </div>
                     <div className="col-md-4">
-                      <label className="form-label text-muted small text-uppercase">Ghi chu</label>
+                      <label className="form-label text-muted small text-uppercase">Ghi chú</label>
                       <input
                         type="text"
                         className="form-control"
@@ -410,9 +410,9 @@ const CustomerDashboard = () => {
                       />
                     </div>
                     <div className="col-12 d-flex justify-content-end">
-                      <button type="submit" className="btn btn-dark" disabled={orderSaving}>
-                        {orderSaving ? 'Dang dat...' : 'Dat ngay'}
-                      </button>
+                        <button type="submit" className="btn btn-dark" disabled={orderSaving}>
+                          {orderSaving ? 'Đang đặt...' : 'Đặt ngay'}
+                        </button>
                     </div>
                   </form>
                 </div>
@@ -423,24 +423,24 @@ const CustomerDashboard = () => {
           <div className="row g-4 mb-4">
             <div className="col-lg-7">
               <div className="card shadow-sm border-0 h-100">
-                <div className="card-header bg-white border-0 pb-0 d-flex justify-content-between align-items-center">
-                  <div>
-                    <p className="text-muted text-uppercase small fw-semibold mb-1">Don hang gan day</p>
-                    <h5 className="mb-0">Hoat dong moi nhat cua ban</h5>
+                  <div className="card-header bg-white border-0 pb-0 d-flex justify-content-between align-items-center">
+                    <div>
+                      <p className="text-muted text-uppercase small fw-semibold mb-1">Đơn hàng gần đây</p>
+                      <h5 className="mb-0">Hoạt động mới nhất của bạn</h5>
+                    </div>
                   </div>
-                </div>
                 <div className="card-body">
                   {recentOrders.length ? (
                     <div className="table-responsive">
                       <table className="table align-middle mb-0">
                         <thead>
                           <tr className="text-muted small text-uppercase">
-                            <th>Ma don</th>
-                            <th>Trang thai</th>
-                            <th>Gia tri</th>
-                            <th>Mon an</th>
-                            <th>Thoi gian</th>
-                            <th className="text-end">Thao tac</th>
+                            <th>Mã đơn</th>
+                            <th>Trạng thái</th>
+                            <th>Giá trị</th>
+                            <th>Món ăn</th>
+                            <th>Thời gian</th>
+                            <th className="text-end">Thao tác</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -463,20 +463,20 @@ const CustomerDashboard = () => {
                                   ? order.items
                                       .map((item) => `${item.quantity}x ${item.product?.name || 'San pham'}`)
                                       .join(', ')
-                                  : 'Chua co mon an'}
+                                  : 'Chưa có món ăn'}
                               </td>
                               <td className="text-muted small">
                                 {formatDateTime(order.created_at || order.order_date)}
                               </td>
                               <td className="text-end">
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-outline-danger"
-                                  disabled={['completed', 'canceled', 'refunded'].includes(order.status)}
-                                  onClick={() => handleCancelOrder(order.order_id)}
-                                >
-                                  Huy don
-                                </button>
+                                 <button
+                                   type="button"
+                                   className="btn btn-sm btn-outline-danger"
+                                   disabled={['completed', 'canceled', 'refunded'].includes(order.status)}
+                                   onClick={() => handleCancelOrder(order.order_id)}
+                                 >
+                                   Huỷ đơn
+                                 </button>
                               </td>
                             </tr>
                           ))}
@@ -484,7 +484,7 @@ const CustomerDashboard = () => {
                       </table>
                     </div>
                   ) : (
-                    <p className="text-muted small mb-0">Ban chua co don hang nao. Bat dau dat mon ngay hom nay!</p>
+                      <p className="text-muted small mb-0">Bạn chưa có đơn hàng nào. Bắt đầu đặt món ngay hôm nay!</p>
                   )}
                 </div>
               </div>
@@ -492,8 +492,8 @@ const CustomerDashboard = () => {
             <div className="col-lg-5">
               <div className="card shadow-sm border-0 h-100">
                 <div className="card-header bg-white border-0 pb-0">
-                  <p className="text-muted text-uppercase small fw-semibold mb-1">Uu dai danh rieng cho ban</p>
-                  <h5 className="mb-0">Khuyen mai dang hoat dong</h5>
+                  <p className="text-muted text-uppercase small fw-semibold mb-1">Ưu đãi dành riêng cho bạn</p>
+                  <h5 className="mb-0">Khuyến mãi đang hoạt động</h5>
                 </div>
                 <div className="card-body d-flex flex-column gap-3">
                   {promotions.length ? (
@@ -505,23 +505,23 @@ const CustomerDashboard = () => {
                               Ma: {promotion.code}
                             </span>
                             <h6 className="mb-1">{promotion.name}</h6>
-                            <p className="text-muted small mb-2">{promotion.description || 'Uu dai dac biet danh cho ban.'}</p>
+                             <p className="text-muted small mb-2">{promotion.description || 'Ưu đãi đặc biệt dành cho bạn.'}</p>
                           </div>
                         </div>
                         <div className="d-flex justify-content-between align-items-center">
-                          <span className="small text-muted">
-                            Het han: {formatDateTime(promotion.end_date)}
-                          </span>
-                          <span className="badge bg-dark text-white">
+                           <span className="small text-muted">
+                             Hết hạn: {formatDateTime(promotion.end_date)}
+                           </span>
+                           <span className="badge bg-dark text-white">
                             {promotion.discount_type === 'fixed'
-                              ? `Giam ${formatCurrency(promotion.discount_value)}`
-                              : `Giam ${promotion.discount_value}%`}
+                              ? `Giảm ${formatCurrency(promotion.discount_value)}`
+                              : `Giảm ${promotion.discount_value}%`}
                           </span>
                         </div>
                       </div>
                     ))
                   ) : (
-                    <p className="text-muted small mb-0">Hien khong co uu dai nao. Vui long quay lai sau!</p>
+                     <p className="text-muted small mb-0">Hiện không có ưu đãi nào. Vui lòng quay lại sau!</p>
                   )}
                 </div>
               </div>
@@ -531,8 +531,8 @@ const CustomerDashboard = () => {
           <div className="card shadow-sm border-0">
             <div className="card-header bg-white border-0 pb-0 d-flex justify-content-between align-items-center">
               <div>
-                <p className="text-muted text-uppercase small fw-semibold mb-1">Goi y cho ban</p>
-                <h5 className="mb-0">Mon an ban nen thu</h5>
+                <p className="text-muted text-uppercase small fw-semibold mb-1">Gợi ý cho bạn</p>
+                <h5 className="mb-0">Món ăn bạn nên thử</h5>
               </div>
             </div>
             <div className="card-body">
@@ -547,21 +547,21 @@ const CustomerDashboard = () => {
                             <i className="bi bi-star-fill" />
                           </div>
                           <div>
-                            <h6 className="mb-1">{item.product?.name || 'San pham'}</h6>
+                            <h6 className="mb-1">{item.product?.name || 'Sản phẩm'}</h6>
                             <p className="text-muted small mb-0">
-                              {formatCurrency(item.product?.price || 0)} - Da ban {formatNumber(item.totalSold)} phan
+                              {formatCurrency(item.product?.price || 0)} - Đã bán {formatNumber(item.totalSold)} phần
                             </p>
                           </div>
                         </div>
                         <button type="button" className="btn btn-outline-dark btn-sm mt-auto">
-                          Dat ngay
+                          Đặt ngay
                         </button>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-muted small mb-0">Chung toi se cap nhat nhung goi y ngon mieng som thoi!</p>
+                <p className="text-muted small mb-0">Chúng tôi sẽ cập nhật những gợi ý ngon miệng sớm thôi!</p>
               )}
             </div>
           </div>

@@ -32,6 +32,8 @@ import StaffPerformance from '../features/staff/pages/StaffPerformance'
 import StaffShifts from '../features/staff/pages/StaffShifts'
 import VietQrCheckout from '../features/customer/pages/VietQrCheckout'
 import StripeCheckout from '../features/customer/pages/StripeCheckout'
+import VnpayCheckout from '../features/customer/pages/VnpayCheckout'
+import PaypalCheckout from '../features/customer/pages/PaypalCheckout'
 
 const AppRoutes = () => (
   <Routes>
@@ -51,6 +53,8 @@ const AppRoutes = () => (
       <Route path="/customer" element={<CustomerLanding />} />
       <Route path="/checkout/vietqr/:orderId" element={<VietQrCheckout />} />
       <Route path="/checkout/stripe/:orderId" element={<StripeCheckout />} />
+      <Route path="/checkout/vnpay/:orderId" element={<VnpayCheckout />} />
+      <Route path="/checkout/paypal/:orderId" element={<PaypalCheckout />} />
     </Route>
 
     <Route element={<ProtectedRoute allowRoles={['admin']} />}>

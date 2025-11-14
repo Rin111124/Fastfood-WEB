@@ -108,7 +108,7 @@ const AdminOrders = () => {
         shipperId: payload?.shipperId ? Number(payload.shipperId) : undefined,
         expectedDeliveryTime: payload?.expectedDeliveryTime || undefined
       })
-      setStatusMessage(`Da cap nhat phan cong cho don #${orderId}`)
+      setStatusMessage(`Đã cập nhật phân công cho đơn #${orderId}`)
       setStatusType('success')
       await loadOrders({})
     } catch (error) {
@@ -122,7 +122,7 @@ const AdminOrders = () => {
     const payload = orderUpdates[orderId]
     try {
       await adminApi.updateOrderStatus(orderId, payload?.status || 'pending')
-      setStatusMessage(`Da cap nhat trang thai don #${orderId}`)
+      setStatusMessage(`Đã cập nhật trạng thái đơn #${orderId}`)
       setStatusType('success')
       await loadOrders({})
     } catch (error) {
@@ -134,7 +134,7 @@ const AdminOrders = () => {
   const handleRefund = async (orderId) => {
     try {
       await adminApi.refundOrder(orderId, {})
-      setStatusMessage(`Da yeu cau hoan tien cho don #${orderId}`)
+      setStatusMessage(`Đã yêu cầu hoàn tiền cho đơn #${orderId}`)
       setStatusType('success')
       await loadOrders({})
     } catch (error) {
@@ -143,15 +143,22 @@ const AdminOrders = () => {
     }
   }
 
-  const staffOptions = useMemo(() => (Array.isArray(staff) ? staff : []), [staff])
+  const staffOptions = useMemo(
+    () => (Array.isArray(staff) ? staff.filter((member) => member.role === 'staff') : []),
+    [staff]
+  )
+  const shipperOptions = useMemo(
+    () => (Array.isArray(staff) ? staff.filter((member) => member.role === 'shipper') : []),
+    [staff]
+  )
 
   return (
     <div className="d-flex flex-column gap-4">
       <div>
-        <h1 className="h3 mb-1">Quan ly don hang</h1>
-        <p className="text-muted mb-0">
-          Theo doi trang thai, phan cong nhan su va xu ly van de cua don hang.
-        </p>
+      <h1 className="h3 mb-1">Quản lý đơn hàng</h1>
+      <p className="text-muted mb-0">
+        Theo dõi trạng thái, phân công nhân sự và xử lý vấn đề của đơn hàng.
+      </p>
       </div>
 
       <AdminStatusAlert message={statusMessage} type={statusType} />
@@ -160,14 +167,14 @@ const AdminOrders = () => {
         <div className="card-body">
           <form className="row gy-3 gx-3 align-items-end" onSubmit={handleFilterSubmit}>
             <div className="col-md-3">
-              <label className="form-label fw-semibold text-uppercase text-muted small">Trang thai</label>
+              <label className="form-label fw-semibold text-uppercase text-muted small">Trạng thái</label>
               <select
                 className="form-select"
                 name="status"
                 value={filters.status}
                 onChange={handleFilterChange}
               >
-                <option value="all">Tat ca</option>
+                <option value="all">Tất cả</option>
                 {ORDER_STATUSES.map((status) => (
                   <option key={status} value={status}>
                     {status}
@@ -176,19 +183,19 @@ const AdminOrders = () => {
               </select>
             </div>
             <div className="col-md-5">
-              <label className="form-label fw-semibold text-uppercase text-muted small">Tim theo khach hang</label>
+              <label className="form-label fw-semibold text-uppercase text-muted small">Tìm theo khách hàng</label>
               <input
                 type="search"
                 className="form-control"
                 name="search"
-                placeholder="Ten dang nhap hoac ten day du"
+                placeholder="Tên đăng nhập hoặc tên đầy đủ"
                 value={filters.search}
                 onChange={handleFilterChange}
               />
             </div>
             <div className="col-md-2 d-grid">
               <button type="submit" className="btn btn-dark">
-                Tai danh sach
+                Tải danh sách
               </button>
             </div>
             <div className="col-md-2 d-grid">
@@ -210,17 +217,17 @@ const AdminOrders = () => {
       {loading ? (
         <div className="card border-0 shadow-sm">
           <div className="card-body text-center py-5">
-            <Spinner label="Dang tai danh sach don hang..." />
+            <Spinner label="Đang tải danh sách đơn hàng..." />
           </div>
         </div>
       ) : (
         <div className="card border-0 shadow-sm">
           <div className="card-header bg-white border-bottom-0 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
             <div>
-              <h5 className="mb-1">Danh sach don hang</h5>
-              <p className="text-muted small mb-0">Cap nhat trang thai va phan cong truc tiep tren bang.</p>
+              <h5 className="mb-1">Danh sách đơn hàng</h5>
+              <p className="text-muted small mb-0">Cập nhật trạng thái và phân công trực tiếp trên bảng.</p>
             </div>
-            <span className="badge bg-warning-subtle text-warning">{orders.length} don</span>
+            <span className="badge bg-warning-subtle text-warning">{orders.length} đơn</span>
           </div>
           <div className="card-body">
             <div className="table-responsive">
@@ -228,12 +235,12 @@ const AdminOrders = () => {
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th>Khach hang</th>
-                    <th>Trang thai</th>
-                    <th>Tong tien</th>
-                    <th>Phan cong</th>
-                    <th>Thoi gian</th>
-                    <th className="text-end">Thao tac</th>
+                    <th>Khách hàng</th>
+                    <th>Trạng thái</th>
+                    <th>Tổng tiền</th>
+                    <th>Phân công</th>
+                    <th>Thời gian</th>
+                    <th className="text-end">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -244,7 +251,7 @@ const AdminOrders = () => {
                         <td className="fw-semibold">#{order.order_id}</td>
                         <td style={{ minWidth: '12rem' }}>
                           <div className="fw-semibold text-capitalize">
-                            {order.User?.full_name || order.User?.username || 'Khach le'}
+                            {order.User?.full_name || order.User?.username || 'Khách lẻ'}
                           </div>
                           <div className="text-muted small">{order.User?.username || 'N/A'}</div>
                         </td>
@@ -285,7 +292,7 @@ const AdminOrders = () => {
                                   handleUpdateChange(order.order_id, 'staffId', event.target.value)
                                 }
                               >
-                                <option value="">-- Staff --</option>
+                                <option value="">-- Nhân viên --</option>
                                 {staffOptions.map((member) => (
                                   <option key={`staff-${member.user_id}`} value={member.user_id}>
                                     {member.full_name || member.username || member.user_id}
@@ -301,8 +308,8 @@ const AdminOrders = () => {
                                   handleUpdateChange(order.order_id, 'shipperId', event.target.value)
                                 }
                               >
-                                <option value="">-- Shipper --</option>
-                                {staffOptions.map((member) => (
+                                <option value="">-- Đối tác giao hàng --</option>
+                                {shipperOptions.map((member) => (
                                   <option key={`shipper-${member.user_id}`} value={member.user_id}>
                                     {member.full_name || member.username || member.user_id}
                                   </option>
@@ -325,19 +332,19 @@ const AdminOrders = () => {
                             </div>
                             <div className="col-12 d-flex gap-2">
                               <button type="submit" className="btn btn-sm btn-outline-secondary ms-auto">
-                                Cap nhat
+                                Cập nhật
                               </button>
                             </div>
                           </form>
                         </td>
                         <td style={{ minWidth: '12rem' }}>
                           <div className="text-muted small">
-                            Tao luc: {formatDateTime(order.created_at || order.order_date)}
+                            Tạo lúc: {formatDateTime(order.created_at || order.order_date)}
                           </div>
-                          <div className="text-muted small">Cap nhat: {formatDateTime(order.updated_at)}</div>
+                          <div className="text-muted small">Cập nhật: {formatDateTime(order.updated_at)}</div>
                           {order.expected_delivery_time && (
                             <div className="badge bg-warning-subtle text-warning mt-2">
-                              Giao du kien: {formatDateTime(order.expected_delivery_time)}
+                              Giao dự kiến: {formatDateTime(order.expected_delivery_time)}
                             </div>
                           )}
                         </td>
@@ -349,16 +356,16 @@ const AdminOrders = () => {
                               disabled={order.status === 'refunded'}
                               onClick={() => handleRefund(order.order_id)}
                             >
-                              Hoan tien
+                              Hoàn tiền
                             </button>
                             {order.items?.length ? (
                               <details>
-                                <summary className="btn btn-sm btn-outline-info mb-0">Chi tiet</summary>
+                                <summary className="btn btn-sm btn-outline-info mb-0">Chi tiết</summary>
                                 <div className="small text-start mt-2">
                                   <ul className="list-unstyled mb-0">
                                     {order.items.map((item) => (
                                       <li key={`${order.order_id}-${item.order_item_id}`}>
-                                        {item.quantity}x {item.Product?.name || 'San pham'} -{' '}
+                                        {item.quantity}x {item.Product?.name || 'Sản phẩm'} -{' '}
                                         {formatCurrency(item.price)}
                                       </li>
                                     ))}
@@ -374,7 +381,7 @@ const AdminOrders = () => {
                   {!orders.length && (
                     <tr>
                       <td colSpan={7} className="text-center text-muted py-4">
-                        Chua co don hang nao phu hop.
+                        Chưa có đơn hàng nào phù hợp.
                       </td>
                     </tr>
                   )}

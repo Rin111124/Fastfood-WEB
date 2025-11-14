@@ -10,6 +10,12 @@ import { Op, fn, col, literal } from "sequelize";
 import db from "../../models/index.js";
 import { ensureProductImageColumns, ensureNewsImageColumns } from "../../utils/schemaEnsurer.js";
 import { isMissingColumnError, isMissingTableError } from "../../utils/dbErrors.js";
+import { createOrderFromPendingPayload } from "../payment/pendingOrder.helper.js";
+import {
+  assignOrderToOnDutyStaff,
+  clearCustomerCart,
+  recordPaymentActivity
+} from "../order/orderFulfillment.service.js";
 
 const {
   User,
@@ -887,15 +893,48 @@ const updatePaymentStatus = async (paymentId, status, actorId) => {
   if (!payment) {
     throw new AdminServiceError("Khong tim thay giao dich", { paymentId });
   }
-  payment.status = status;
-  await payment.save();
-  if (payment.order_id && status === "success") {
-    const order = await Order.findByPk(payment.order_id);
-    if (order && order.status !== "paid" && order.status !== "completed") {
-      order.status = "paid";
-      await order.save();
+
+  let orderUserId = null;
+  if (status === "success") {
+    await sequelize.transaction(async (t) => {
+      let order = null;
+      let needsFulfillment = false;
+      if (!payment.order_id && payment.meta?.pending_order) {
+        try {
+          order = await createOrderFromPendingPayload(payment.meta.pending_order, { transaction: t });
+        } catch (error) {
+          throw new AdminServiceError(error.message || "Khong tao duoc don hang tu giao dich", {
+            paymentId,
+            code: error.code || "PENDING_ORDER_INVALID"
+          });
+        }
+        payment.order_id = order.order_id;
+        needsFulfillment = true;
+      } else if (payment.order_id) {
+        order = await Order.findByPk(payment.order_id, { transaction: t });
+      }
+      await payment.update({ status, order_id: payment.order_id }, { transaction: t });
+      if (order) {
+        if (needsFulfillment || (order.status !== "paid" && order.status !== "completed")) {
+          if (order.status !== "paid" && order.status !== "completed") {
+            await order.update({ status: "paid" }, { transaction: t });
+          }
+          await assignOrderToOnDutyStaff(order, { transaction: t });
+          await recordPaymentActivity(order, payment.provider || "manual", {
+            paymentId: payment.payment_id,
+            txn_ref: payment.txn_ref
+          });
+        }
+        orderUserId = order.user_id;
+      }
+    });
+    if (orderUserId) {
+      await clearCustomerCart(orderUserId);
     }
+  } else {
+    await payment.update({ status });
   }
+
   await logAction(actorId, "UPDATE_PAYMENT_STATUS", "payments", { paymentId, status });
   return payment.get({ plain: true });
 };
@@ -1103,6 +1142,7 @@ const scheduleStaffShift = async (payload, actorId) => {
 
 export {
   AdminServiceError,
+  logAction,
   getDashboardMetrics,
   listUsers,
   createUser,

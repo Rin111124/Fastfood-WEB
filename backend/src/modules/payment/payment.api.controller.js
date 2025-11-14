@@ -3,7 +3,14 @@
 import db from "../../models/index.js";
 import { PaymentServiceError, createVnpayPaymentUrl, verifyVnpReturn, handleVnpIpn } from "./vnpay.service.js";
 import { PaypalServiceError, createPaypalOrder, capturePaypalOrder, verifyPaypalWebhook, handlePaypalWebhookEvent } from "./paypal.service.js";
-import { VietQrError, createVietqrPayment, confirmVietqrPayment } from "./vietqr.service.js";
+import {
+  VietQrError,
+  createVietqrPayment,
+  confirmVietqrPayment,
+  cancelVietqrPayment,
+  queryVietqrPayment,
+  handleVietqrWebhook
+} from "./vietqr.service.js";
 import { StripeServiceError, createStripePaymentIntent, handleStripeWebhook } from "./stripe.service.js";
 
 const resolveUserId = (req) => Number(req?.auth?.user_id || req?.session?.user?.user_id);
@@ -22,17 +29,23 @@ const handleError = (res, error) => {
 const createVnpayUrlHandler = async (req, res) => {
   try {
     const userId = resolveUserId(req);
+    const role = resolveRole(req);
     if (!userId) return res.status(401).json({ success: false, message: "Chua dang nhap" });
-    const orderId = Number(req.body?.orderId || req.query?.orderId);
-    if (!orderId) return res.status(400).json({ success: false, message: "Thieu orderId" });
+    const orderId = req.body?.orderId ? Number(req.body.orderId) : req.query?.orderId ? Number(req.query.orderId) : undefined;
+    const orderPayload = req.body?.orderPayload;
+    if (!orderId && !orderPayload) {
+      return res.status(400).json({ success: false, message: "Thieu orderId hoac orderPayload" });
+    }
 
     const withDebug = String(req.query?.debug || "").toLowerCase() === "1" || String(req.query?.debug || "").toLowerCase() === "true";
     const { payUrl, txnRef, debug } = await createVnpayPaymentUrl(req, {
       orderId,
       bankCode: req.body?.bankCode || req.query?.bankCode,
       locale: req.body?.locale || req.query?.locale,
-      withDebug
-    });
+      withDebug,
+      userId,
+      role
+    }, { pendingOrder: orderPayload });
     const payload = { payUrl, txnRef };
     if (withDebug && debug) payload.debug = debug;
     return res.json({ success: true, data: payload });
@@ -106,10 +119,17 @@ export { getVnpayStatusHandler };
 const redirectToVnpayHandler = async (req, res) => {
   try {
     const userId = resolveUserId(req);
+    const role = resolveRole(req);
     if (!userId) return res.status(401).send("Unauthorized");
     const orderId = Number(req.query?.orderId);
     if (!orderId) return res.status(400).send("Missing orderId");
-    const { payUrl } = await createVnpayPaymentUrl(req, { orderId, bankCode: req.query?.bankCode, locale: req.query?.locale });
+    const { payUrl } = await createVnpayPaymentUrl(req, {
+      orderId,
+      bankCode: req.query?.bankCode,
+      locale: req.query?.locale,
+      userId,
+      role
+    });
     return res.redirect(payUrl);
   } catch (error) {
     if (error instanceof PaymentServiceError) {
@@ -152,10 +172,14 @@ const createCodHandler = async (req, res) => {
 const createVietqrHandler = async (req, res) => {
   try {
     const userId = resolveUserId(req);
+    const role = resolveRole(req);
     if (!userId) return res.status(401).json({ success: false, message: "Chua dang nhap" });
-    const orderId = Number(req.body?.orderId || req.query?.orderId);
-    if (!orderId) return res.status(400).json({ success: false, message: "Thieu orderId" });
-    const payload = await createVietqrPayment(orderId);
+    const orderId = req.body?.orderId ? Number(req.body.orderId) : req.query?.orderId ? Number(req.query.orderId) : undefined;
+    const pendingOrderPayload = req.body?.orderPayload || req.body?.pendingOrder;
+    if (!orderId && !pendingOrderPayload) {
+      return res.status(400).json({ success: false, message: "Thieu orderId hoac orderPayload" });
+    }
+    const payload = await createVietqrPayment(orderId, { userId, role }, { pendingOrder: pendingOrderPayload });
     return res.json({ success: true, data: payload });
   } catch (error) {
     if (error instanceof VietQrError) {
@@ -181,15 +205,72 @@ const confirmVietqrHandler = async (req, res) => {
   }
 };
 
-export { createCodHandler, createVietqrHandler, confirmVietqrHandler };
-
-const createPaypalOrderHandler = async (req, res) => {
+const cancelVietqrHandler = async (req, res) => {
   try {
     const userId = resolveUserId(req);
     if (!userId) return res.status(401).json({ success: false, message: "Chua dang nhap" });
     const orderId = Number(req.body?.orderId || req.query?.orderId);
     if (!orderId) return res.status(400).json({ success: false, message: "Thieu orderId" });
-    const { approvalUrl, paypalOrderId } = await createPaypalOrder(orderId);
+    const reason = req.body?.reason || req.query?.reason;
+    const result = await cancelVietqrPayment(userId, orderId, { role: resolveRole(req), reason });
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    if (error instanceof VietQrError) {
+      return res.status(error.statusCode || 400).json({ success: false, message: error.message, code: error.code });
+    }
+    return handleError(res, error);
+  }
+};
+
+const queryVietqrHandler = async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: "Chua dang nhap" });
+    const orderId = Number(req.body?.orderId || req.query?.orderId);
+    if (!orderId) return res.status(400).json({ success: false, message: "Thieu orderId" });
+    const result = await queryVietqrPayment(orderId, { userId, role: resolveRole(req) });
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    if (error instanceof VietQrError) {
+      return res.status(error.statusCode || 400).json({ success: false, message: error.message, code: error.code });
+    }
+    return handleError(res, error);
+  }
+};
+
+const vietqrWebhookHandler = async (req, res) => {
+  try {
+    const result = await handleVietqrWebhook(req.body, req.headers);
+    return res.json(result);
+  } catch (error) {
+    if (error instanceof VietQrError) {
+      return res.status(error.statusCode || 400).json({ success: false, message: error.message, code: error.code });
+    }
+    console.error("VietQR webhook error:", error);
+    return res.status(500).json({ success: false, message: "Co loi khi xu ly webhook VietQR" });
+  }
+};
+
+export {
+  createCodHandler,
+  createVietqrHandler,
+  confirmVietqrHandler,
+  cancelVietqrHandler,
+  queryVietqrHandler,
+  vietqrWebhookHandler
+};
+
+const createPaypalOrderHandler = async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const role = resolveRole(req);
+    if (!userId) return res.status(401).json({ success: false, message: "Chua dang nhap" });
+    const orderId = req.body?.orderId ? Number(req.body.orderId) : req.query?.orderId ? Number(req.query.orderId) : undefined;
+    const orderPayload = req.body?.orderPayload;
+    if (!orderId && !orderPayload) {
+      return res.status(400).json({ success: false, message: "Thieu orderId hoac orderPayload" });
+    }
+    const { approvalUrl, paypalOrderId } = await createPaypalOrder(orderId, { userId, role }, { pendingOrder: orderPayload });
     return res.json({ success: true, data: { approvalUrl, paypalOrderId } });
   } catch (error) {
     return handleError(res, error);
@@ -240,10 +321,14 @@ const paypalWebhookHandler = async (req, res) => {
 const createStripeIntentHandler = async (req, res) => {
   try {
     const userId = resolveUserId(req);
+    const role = resolveRole(req);
     if (!userId) return res.status(401).json({ success: false, message: "Chua dang nhap" });
-    const orderId = Number(req.body?.orderId || req.query?.orderId);
-    if (!orderId) return res.status(400).json({ success: false, message: "Thieu orderId" });
-    const data = await createStripePaymentIntent(orderId);
+    const orderId = req.body?.orderId ? Number(req.body.orderId) : req.query?.orderId ? Number(req.query.orderId) : undefined;
+    const orderPayload = req.body?.orderPayload;
+    if (!orderId && !orderPayload) {
+      return res.status(400).json({ success: false, message: "Thieu orderId hoac orderPayload" });
+    }
+    const data = await createStripePaymentIntent(orderId, { userId, role }, { pendingOrder: orderPayload });
     return res.json({ success: true, data });
   } catch (error) {
     if (error instanceof StripeServiceError) {

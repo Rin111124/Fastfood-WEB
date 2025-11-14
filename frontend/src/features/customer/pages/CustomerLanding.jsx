@@ -4,40 +4,40 @@ import apiFetch from '../../../services/apiClient'
 import '../../../styles/customerLanding.css'
 
 const NAV_ITEMS = Object.freeze([
-  { id: 'overview', label: 'Tong quan' },
-  { id: 'profile', label: 'Quan ly thong tin' },
-  { id: 'history', label: 'Nhat ky ho so' }
+  { id: 'overview', label: 'Tổng quan' },
+  { id: 'profile', label: 'Quản lý thông tin' },
+  { id: 'history', label: 'Nhật ký hồ sơ' }
 ])
 
 const FIELD_LABELS = Object.freeze({
-  user_id: 'Ma nguoi dung',
-  username: 'Ten dang nhap',
+  user_id: 'Mã người dùng',
+  username: 'Tên đăng nhập',
   email: 'Email',
-  role: 'Vai tro',
-  status: 'Trang thai',
-  full_name: 'Ho va ten',
-  phone_number: 'So dien thoai',
-  address: 'Dia chi',
-  gender: 'Gioi tinh',
-  created_at: 'Tao luc',
-  updated_at: 'Cap nhat luc',
-  deleted_at: 'Xoa luc'
+  role: 'Vai trò',
+  status: 'Trạng thái',
+  full_name: 'Họ và tên',
+  phone_number: 'Số điện thoại',
+  address: 'Địa chỉ',
+  gender: 'Giới tính',
+  created_at: 'Tạo lúc',
+  updated_at: 'Cập nhật lúc',
+  deleted_at: 'Xóa lúc'
 })
 
 const PROFILE_FIELDS = Object.freeze(['full_name', 'phone_number', 'address', 'gender'])
 
 const GENDER_OPTIONS = Object.freeze([
-  { value: 'unknown', label: 'Khong xac dinh' },
+  { value: 'unknown', label: 'Không xác định' },
   { value: 'male', label: 'Nam' },
-  { value: 'female', label: 'Nu' },
-  { value: 'other', label: 'Khac' }
+  { value: 'female', label: 'Nữ' },
+  { value: 'other', label: 'Khác' }
 ])
 
 const GENDER_LABELS = Object.freeze({
-  unknown: 'Khong xac dinh',
+  unknown: 'Không xác định',
   male: 'Nam',
-  female: 'Nu',
-  other: 'Khac'
+  female: 'Nữ',
+  other: 'Khác'
 })
 
 const PROFILE_DISPLAY_ORDER = Object.freeze([
@@ -109,19 +109,19 @@ const resolveFieldLabel = (field) => {
 
 const formatDateTime = (value) => {
   if (!value) {
-    return 'Chua cap nhat'
+    return 'Chưa cập nhật'
   }
   try {
     const date = value instanceof Date ? value : new Date(value)
     if (Number.isNaN(date.getTime())) {
-      return 'Chua cap nhat'
+      return 'Chưa cập nhật'
     }
     return new Intl.DateTimeFormat('vi-VN', {
       dateStyle: 'medium',
       timeStyle: 'short'
     }).format(date)
   } catch (error) {
-    return 'Chua cap nhat'
+    return 'Chưa cập nhật'
   }
 }
 
@@ -142,7 +142,7 @@ const hasProfileDetails = (profile) => {
 const formatHistoryChange = (field, value) => {
   const label = FIELD_LABELS[field] || field
   if (value === null || value === '') {
-    return `${label}: da xoa`
+    return `${label}: đã xóa`
   }
   if (field === 'gender') {
     return `${label}: ${GENDER_LABELS[value] || value}`
@@ -152,7 +152,7 @@ const formatHistoryChange = (field, value) => {
 
 const describeChanges = (changes) => {
   if (!changes || !Object.keys(changes).length) {
-    return 'Khong co chi tiet bo sung.'
+    return 'Không có chi tiết bổ sung.'
   }
   return Object.entries(changes)
     .map(([field, value]) => formatHistoryChange(field, value))
@@ -181,7 +181,7 @@ const CustomerLanding = () => {
   const historyCounter = useRef(0)
 
   useEffect(() => {
-    document.title = 'FatFood | Khach hang'
+    document.title = 'FatFood | Khách hàng'
   }, [])
 
   const appendHistory = useCallback((action, changes) => {
@@ -201,20 +201,20 @@ const CustomerLanding = () => {
   const loadProfile = useCallback(
     async ({ silent = false } = {}) => {
       if (!silent) {
-        setStatus({ type: 'info', message: 'Dang tai thong tin khach hang...' })
+        setStatus({ type: 'info', message: 'Đang tải thông tin khách hàng...' })
       }
       setLoading(true)
       try {
         const response = await apiFetch('/api/customer/me', { credentials: 'include' })
         const payload = await response.json()
         if (!payload?.success) {
-          throw new Error(payload?.message || 'Khong the tai ho so khach hang.')
+        throw new Error(payload?.message || 'Không thể tải hồ sơ khách hàng.')
         }
         const data = payload.data || null
         setProfile(data)
         setFormMode('view')
         if (!silent) {
-          setStatus({ type: 'success', message: 'Da dong bo ho so moi nhat.' })
+        setStatus({ type: 'success', message: 'Đã đồng bộ hồ sơ mới nhất.' })
         } else {
           setStatus((prev) => (prev?.type === 'error' ? prev : null))
         }
@@ -222,7 +222,7 @@ const CustomerLanding = () => {
         console.error('Failed to fetch customer profile', error)
         setStatus({
           type: 'error',
-          message: resolveSafeMessage(error, 'Khong the tai ho so khach hang. Vui long thu lai sau.')
+          message: resolveSafeMessage(error, 'Không thể tải hồ sơ khách hàng. Vui lòng thử lại sau.')
         })
       } finally {
         setLoading(false)
@@ -270,7 +270,7 @@ const CustomerLanding = () => {
 
   const formatProfileValue = useCallback((key, value) => {
     if (value === null || typeof value === 'undefined') {
-      return 'Chua cap nhat'
+      return 'Chưa cập nhật'
     }
     if (key === 'gender') {
       return GENDER_LABELS[value] || value
@@ -278,14 +278,14 @@ const CustomerLanding = () => {
     if (key.endsWith('_at') || key.endsWith('_date') || key.endsWith('_time')) {
       return formatDateTime(value)
     }
-    if (typeof value === 'boolean') {
-      return value ? 'Co' : 'Khong'
+      if (typeof value === 'boolean') {
+        return value ? 'Có' : 'Không'
     }
     if (typeof value === 'number') {
       return String(value)
     }
-    if (typeof value === 'string' && value.trim().length === 0) {
-      return 'Chua cap nhat'
+      if (typeof value === 'string' && value.trim().length === 0) {
+        return 'Chưa cập nhật'
     }
     if (typeof value === 'object') {
       try {
@@ -409,7 +409,7 @@ const CustomerLanding = () => {
     }
 
     setProcessing(true)
-    setStatus({ type: 'info', message: 'Dang tao thong tin nguoi dung...' })
+    setStatus({ type: 'info', message: 'Đang tạo thông tin người dùng...' })
     try {
       const response = await apiFetch('/api/customer/me', {
         method: 'POST',
@@ -419,7 +419,7 @@ const CustomerLanding = () => {
       })
       const payloadJson = await response.json()
       if (!payloadJson?.success) {
-        throw new Error(payloadJson?.message || 'Khong the tao thong tin nguoi dung.')
+        throw new Error(payloadJson?.message || 'Không thể tạo thông tin người dùng.')
       }
       const nextProfile = payloadJson.data || null
       setProfile(nextProfile)
@@ -437,7 +437,7 @@ const CustomerLanding = () => {
       console.error('Failed to create customer profile', error)
       setStatus({
         type: 'error',
-        message: resolveSafeMessage(error, 'Khong the tao thong tin nguoi dung. Vui long thu lai sau.')
+        message: resolveSafeMessage(error, 'Không thể tạo thông tin người dùng. Vui lòng thử lại sau.')
       })
     } finally {
       setProcessing(false)
@@ -450,12 +450,12 @@ const CustomerLanding = () => {
       return
     }
     if (!isDirty) {
-      setStatus({ type: 'info', message: 'Khong co thay doi nao can luu.' })
+      setStatus({ type: 'info', message: 'Không có thay đổi nào cần lưu.' })
       return
     }
 
     setProcessing(true)
-    setStatus({ type: 'info', message: 'Dang cap nhat thong tin nguoi dung...' })
+    setStatus({ type: 'info', message: 'Đang cập nhật thông tin người dùng...' })
     try {
       const response = await apiFetch('/api/customer/me', {
         method: 'PATCH',
@@ -465,7 +465,7 @@ const CustomerLanding = () => {
       })
       const payloadJson = await response.json()
       if (!payloadJson?.success) {
-        throw new Error(payloadJson?.message || 'Khong the cap nhat thong tin nguoi dung.')
+        throw new Error(payloadJson?.message || 'Không thể cập nhật thông tin người dùng.')
       }
       const nextProfile = payloadJson.data || null
       setProfile(nextProfile)
@@ -476,7 +476,7 @@ const CustomerLanding = () => {
       console.error('Failed to update customer profile', error)
       setStatus({
         type: 'error',
-        message: resolveSafeMessage(error, 'Khong the cap nhat thong tin nguoi dung. Vui long thu lai sau.')
+        message: resolveSafeMessage(error, 'Không thể cập nhật thông tin người dùng. Vui lòng thử lại sau.')
       })
     } finally {
       setProcessing(false)
@@ -487,13 +487,13 @@ const CustomerLanding = () => {
     if (processing || !profileHasDetails) {
       return
     }
-    const confirmed = window.confirm('Ban chac chan muon xoa thong tin lien lac?')
+    const confirmed = window.confirm('Bạn chắc chắn muốn xóa thông tin liên lạc?')
     if (!confirmed) {
       return
     }
 
     setProcessing(true)
-    setStatus({ type: 'info', message: 'Dang xoa thong tin nguoi dung...' })
+    setStatus({ type: 'info', message: 'Đang xóa thông tin người dùng...' })
     try {
       const response = await apiFetch('/api/customer/me', {
         method: 'DELETE',
@@ -501,13 +501,13 @@ const CustomerLanding = () => {
       })
       const payloadJson = await response.json()
       if (!payloadJson?.success) {
-        throw new Error(payloadJson?.message || 'Khong the xoa thong tin nguoi dung.')
+        throw new Error(payloadJson?.message || 'Không thể xóa thông tin người dùng.')
       }
       const nextProfile = payloadJson.data || null
       setProfile(nextProfile)
       setFormMode('view')
       setActiveTab('overview')
-      setStatus({ type: 'success', message: 'Da xoa thong tin nguoi dung.' })
+      setStatus({ type: 'success', message: 'Đã xóa thông tin người dùng.' })
       appendHistory('Xoa', {
         full_name: null,
         phone_number: null,
@@ -518,7 +518,7 @@ const CustomerLanding = () => {
       console.error('Failed to delete customer profile', error)
       setStatus({
         type: 'error',
-        message: resolveSafeMessage(error, 'Khong the xoa thong tin nguoi dung. Vui long thu lai sau.')
+        message: resolveSafeMessage(error, 'Không thể xóa thông tin người dùng. Vui lòng thử lại sau.')
       })
     } finally {
       setProcessing(false)
@@ -530,10 +530,10 @@ const CustomerLanding = () => {
   const contactSummary = useMemo(() => {
     const mapped = mapProfileToForm(profile)
     return [
-      { label: 'Ho va ten', value: mapped.full_name || 'Chua cap nhat' },
-      { label: 'So dien thoai', value: mapped.phone_number || 'Chua cap nhat' },
-      { label: 'Dia chi', value: mapped.address || 'Chua cap nhat' },
-      { label: 'Gioi tinh', value: GENDER_LABELS[mapped.gender] || 'Khong xac dinh' }
+      { label: 'Họ tên', value: mapped.full_name || 'Chưa cập nhật' },
+      { label: 'Số điện thoại', value: mapped.phone_number || 'Chưa cập nhật' },
+      { label: 'Địa chỉ', value: mapped.address || 'Chưa cập nhật' },
+      { label: 'Giới tính', value: GENDER_LABELS[mapped.gender] || 'Không xác định' }
     ]
   }, [profile])
 
@@ -566,21 +566,21 @@ const CustomerLanding = () => {
               type="button"
               className="customer-btn customer-btn--ghost customer-taskbar__back"
               onClick={handleGoBack}
-              aria-label="Quay lai trang truoc"
-              title="Quay lai"
+              aria-label="Quay lại trang trước"
+              title="Quay lại"
             >
               <span aria-hidden="true">←</span>
             </button>
             <span className="customer-taskbar__user">{greetingName}</span>
-            <button
-              type="button"
-              className="customer-btn customer-btn--ghost customer-taskbar__refresh"
-              onClick={handleRefresh}
-              disabled={loading || processing}
-            >
-              {loading ? 'Dang tai...' : 'Dong bo'}
-            </button>
-          </div>
+              <button
+                type="button"
+                className="customer-btn customer-btn--ghost customer-taskbar__refresh"
+                onClick={handleRefresh}
+                disabled={loading || processing}
+              >
+                {loading ? 'Đang tải...' : 'Đồng bộ'}
+              </button>
+            </div>
         </div>
       </header>
 
@@ -597,13 +597,13 @@ const CustomerLanding = () => {
           hidden={activeTab !== 'overview'}
         >
           <div className="customer-section__header">
-            <div>
-              <p className="customer-section__eyebrow">Trang khach hang</p>
-              <h1 className="customer-section__title">Xin chao, {greetingName}</h1>
-              <p className="customer-section__subtitle">
-                Quan ly thong tin ca nhan, kiem tra trang thai tai khoan va theo doi hoat dong gan day.
-              </p>
-            </div>
+              <div>
+                <p className="customer-section__eyebrow">Trang khách hàng</p>
+                <h1 className="customer-section__title">Xin chào, {greetingName}</h1>
+                <p className="customer-section__subtitle">
+                  Quản lý thông tin cá nhân, kiểm tra trạng thái tài khoản và theo dõi hoạt động gần đây.
+                </p>
+              </div>
             <div className="customer-section__actions">
               <button
                 type="button"
@@ -611,81 +611,81 @@ const CustomerLanding = () => {
                 onClick={() => setActiveTab('profile')}
                 disabled={processing}
               >
-                Quan ly thong tin
+                Quản lý thông tin
               </button>
             </div>
           </div>
 
           {loading && (
-            <div className="customer-placeholder">Dang tai du lieu tai khoan...</div>
+            <div className="customer-placeholder">Đang tải dữ liệu tài khoản...</div>
           )}
 
           {!loading && (
             <div className="customer-grid">
-              <article className="customer-card">
-                <div className="customer-card__header">
-                  <h2 className="customer-card__title">Thong tin nguoi dung</h2>
-                  <span className="customer-chip">
-                    {profile?.status ? profile.status : 'Chua cap nhat'}
-                  </span>
-                </div>
-                <dl className="customer-definition">
-                  {accountSummary.length === 0 ? (
-                    <div className="customer-definition__row">
-                      <dt>Thong tin</dt>
-                      <dd>Chua co du lieu nguoi dung.</dd>
-                    </div>
-                  ) : (
-                    accountSummary.map((item) => (
-                      <div key={item.key} className="customer-definition__row">
-                        <dt>{item.label}</dt>
-                        <dd>{item.value || 'Chua cap nhat'}</dd>
-                      </div>
-                    ))
-                  )}
-                </dl>
-              </article>
+               <article className="customer-card">
+                 <div className="customer-card__header">
+                   <h2 className="customer-card__title">Thông tin người dùng</h2>
+                   <span className="customer-chip">
+                     {profile?.status ? profile.status : 'Chưa cập nhật'}
+                   </span>
+                 </div>
+                 <dl className="customer-definition">
+                   {accountSummary.length === 0 ? (
+                     <div className="customer-definition__row">
+                       <dt>Thông tin</dt>
+                       <dd>Chưa có dữ liệu người dùng.</dd>
+                     </div>
+                   ) : (
+                     accountSummary.map((item) => (
+                       <div key={item.key} className="customer-definition__row">
+                         <dt>{item.label}</dt>
+                         <dd>{item.value || 'Chưa cập nhật'}</dd>
+                       </div>
+                     ))
+                   )}
+                 </dl>
+               </article>
 
-              <article className="customer-card">
-                <div className="customer-card__header">
-                  <h2 className="customer-card__title">Thong tin lien lac</h2>
-                  <span className={`customer-chip${profileHasDetails ? ' customer-chip--success' : ''}`}>
-                    {profileHasDetails ? 'Da cap nhat' : 'Chua cap nhat'}
-                  </span>
-                </div>
-                <dl className="customer-definition">
-                  {contactSummary.map((item) => (
-                    <div key={item.label} className="customer-definition__row">
-                      <dt>{item.label}</dt>
-                      <dd>{item.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </article>
+               <article className="customer-card">
+                 <div className="customer-card__header">
+                   <h2 className="customer-card__title">Thông tin liên lạc</h2>
+                   <span className={`customer-chip${profileHasDetails ? ' customer-chip--success' : ''}`}>
+                     {profileHasDetails ? 'Đã cập nhật' : 'Chưa cập nhật'}
+                   </span>
+                 </div>
+                 <dl className="customer-definition">
+                   {contactSummary.map((item) => (
+                     <div key={item.label} className="customer-definition__row">
+                       <dt>{item.label}</dt>
+                       <dd>{item.value}</dd>
+                     </div>
+                   ))}
+                 </dl>
+               </article>
 
-              <article className="customer-card customer-card--activity">
-                <div className="customer-card__header">
-                  <h2 className="customer-card__title">Hoat dong gan day</h2>
-                </div>
-                {latestHistory ? (
-                  <div className="customer-activity__preview">
-                    <p className="customer-activity__action">{latestHistory.action}</p>
-                    <p className="customer-activity__time">{formatDateTime(latestHistory.timestamp)}</p>
-                    <p className="customer-activity__summary">{latestHistory.summary}</p>
-                    <button
-                      type="button"
-                      className="customer-btn customer-btn--ghost"
-                      onClick={() => setActiveTab('history')}
-                    >
-                      Xem nhat ky
-                    </button>
-                  </div>
-                ) : (
-                  <p className="customer-empty">
-                    Chua co hoat dong nao trong phien lam viec nay.
-                  </p>
-                )}
-              </article>
+               <article className="customer-card customer-card--activity">
+                 <div className="customer-card__header">
+                   <h2 className="customer-card__title">Hoạt động gần đây</h2>
+                 </div>
+                 {latestHistory ? (
+                   <div className="customer-activity__preview">
+                     <p className="customer-activity__action">{latestHistory.action}</p>
+                     <p className="customer-activity__time">{formatDateTime(latestHistory.timestamp)}</p>
+                     <p className="customer-activity__summary">{latestHistory.summary}</p>
+                     <button
+                       type="button"
+                       className="customer-btn customer-btn--ghost"
+                       onClick={() => setActiveTab('history')}
+                     >
+                       Xem nhật ký
+                     </button>
+                   </div>
+                 ) : (
+                   <p className="customer-empty">
+                     Chưa có hoạt động nào trong phiên làm việc này.
+                   </p>
+                 )}
+               </article>
             </div>
           )}
         </section>
@@ -696,13 +696,13 @@ const CustomerLanding = () => {
           hidden={activeTab !== 'profile'}
         >
           <div className="customer-section__header">
-            <div>
-              <p className="customer-section__eyebrow">Quan ly ho so</p>
-              <h2 className="customer-section__title">Thong tin nguoi dung</h2>
-              <p className="customer-section__subtitle">
-                Cap nhat thong tin lien lac de chung toi co the ho tro ban tot nhat.
-              </p>
-            </div>
+              <div>
+                <p className="customer-section__eyebrow">Quản lý hồ sơ</p>
+                <h2 className="customer-section__title">Thông tin người dùng</h2>
+                <p className="customer-section__subtitle">
+                  Cập nhật thông tin liên lạc để chúng tôi có thể hỗ trợ bạn tốt nhất.
+                </p>
+              </div>
             <div className="customer-section__actions">
               {formMode === 'view' && !profileHasDetails && (
                 <button
@@ -711,7 +711,7 @@ const CustomerLanding = () => {
                   onClick={handleStartCreate}
                   disabled={processing}
                 >
-                  Tao ho so
+                  Tạo hồ sơ
                 </button>
               )}
               {formMode === 'view' && profileHasDetails && (
@@ -722,7 +722,7 @@ const CustomerLanding = () => {
                     onClick={handleStartEdit}
                     disabled={processing}
                   >
-                    Chinh sua
+                    Chỉnh sửa
                   </button>
                   <button
                     type="button"
@@ -730,7 +730,7 @@ const CustomerLanding = () => {
                     onClick={handleDeleteProfile}
                     disabled={processing}
                   >
-                    Xoa thong tin
+                    Xóa thông tin
                   </button>
                 </>
               )}
@@ -752,10 +752,10 @@ const CustomerLanding = () => {
           </article>
 
           <article className="customer-card customer-card--form">
-            {formMode === 'view' ? (
-              <p className="customer-note">
-                Chon &quot;Tao ho so&quot; neu ban chua co thong tin hoac &quot;Chinh sua&quot; de cap nhat truong da co.
-              </p>
+              {formMode === 'view' ? (
+                <p className="customer-note">
+                  Chọn &quot;Tạo hồ sơ&quot; nếu bạn chưa có thông tin hoặc &quot;Chỉnh sửa&quot; để cập nhật trường đã có.
+                </p>
             ) : (
               <form
                 className="customer-form"
@@ -826,7 +826,7 @@ const CustomerLanding = () => {
                     className="customer-btn customer-btn--primary"
                     disabled={processing || (isEditMode && !isDirty)}
                   >
-                    {processing ? 'Dang xu ly...' : isCreateMode ? 'Tao thong tin' : 'Luu thay doi'}
+                    {processing ? 'Đang xử lý...' : isCreateMode ? 'Tạo thông tin' : 'Lưu thay đổi'}
                   </button>
                   <button
                     type="button"
@@ -834,7 +834,7 @@ const CustomerLanding = () => {
                     onClick={handleCancelForm}
                     disabled={processing}
                   >
-                    Huy
+                    Hủy
                   </button>
                   {isEditMode && (
                     <button
@@ -843,18 +843,18 @@ const CustomerLanding = () => {
                       onClick={handleResetForm}
                       disabled={processing || !isDirty}
                     >
-                      Khoi phuc gia tri
+                      Khôi phục giá trị
                     </button>
                   )}
                   {profileHasDetails && (
-                    <button
-                      type="button"
-                      className="customer-btn customer-btn--danger"
-                      onClick={handleDeleteProfile}
-                      disabled={processing}
-                    >
-                      Xoa thong tin
-                    </button>
+                      <button
+                        type="button"
+                        className="customer-btn customer-btn--danger"
+                        onClick={handleDeleteProfile}
+                        disabled={processing}
+                      >
+                        Xóa thông tin
+                      </button>
                   )}
                 </div>
               </form>
@@ -879,9 +879,9 @@ const CustomerLanding = () => {
 
           <article className="customer-card customer-card--history">
             {history.length === 0 ? (
-              <p className="customer-empty">
-                Chua co hoat dong nao duoc ghi nhan. Cap nhat ho so de xem lai lich su thay doi.
-              </p>
+                <p className="customer-empty">
+                  Chưa có hoạt động nào được ghi nhận. Cập nhật hồ sơ để xem lại lịch sử thay đổi.
+                </p>
             ) : (
               <ul className="customer-history__list">
                 {history.map((entry) => (

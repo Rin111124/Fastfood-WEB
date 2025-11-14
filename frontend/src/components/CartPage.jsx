@@ -85,43 +85,37 @@ const CartPage = () => {
     if (!items.length) return
     setCheckingOut(true)
     try {
-      const orderPayload = { items: items.map((it) => ({ productId: it.product_id, quantity: it.quantity })) }
+      const orderPayload = {
+        payment_method: paymentMethod,
+        items: items.map((it) => ({
+          productId: it.product_id,
+          quantity: it.quantity,
+          selected_options: Array.isArray(it.selected_options) ? it.selected_options : []
+        }))
+      }
       const order = await customerApi.createOrder(orderPayload)
-      if (paymentMethod === 'vnpay') {
-        const pay = await customerApi.createVnpayPaymentUrl(order.order_id)
-        if (pay?.payUrl) {
-          const opened = window.open(pay.payUrl, '_blank', 'noopener,noreferrer')
-          if (!opened) {
-            window.location.href = `/api/payments/vnpay/redirect?orderId=${order.order_id}`
-          }
-        } else {
-          setCheckingOut(false)
-          alert('Khong tao duoc duong dan thanh toan. Vui long thu lai.')
-        }
-      } else if (paymentMethod === 'vietqr') {
-        navigate(`/checkout/vietqr/${order.order_id}`)
-        setCheckingOut(false)
-      } else if (paymentMethod === 'cod') {
-        await customerApi.createCodPayment(order.order_id)
+      const orderId = order?.order_id
+      if (!orderId) {
+        throw new Error('Khong tao duoc don hang.')
+      }
+
+      if (paymentMethod === 'cod') {
+        await customerApi.createCodPayment(orderId)
         alert('Da tao don thanh toan COD. Vui long thanh toan khi nhan hang.')
         navigate('/customer', { replace: true })
         setCheckingOut(false)
-      } else if (paymentMethod === 'paypal') {
-        const response = await customerApi.createPaypalPayment(order.order_id)
-        const approvalUrl = response?.approvalUrl || response?.data?.approvalUrl || response?.payUrl
-        if (approvalUrl) {
-          const opened = window.open(approvalUrl, '_blank', 'noopener,noreferrer')
-          if (!opened) {
-            window.location.href = approvalUrl
-          }
-        } else {
-          alert('Khong tao duoc giao dich PayPal. Vui long thu lai.')
-        }
-        setCheckingOut(false)
-      } else if (paymentMethod === 'stripe') {
-        navigate(`/checkout/stripe/${order.order_id}`)
-        setCheckingOut(false)
+        return
       }
+
+      const routeMap = {
+        vnpay: `/checkout/vnpay/${orderId}`,
+        vietqr: `/checkout/vietqr/${orderId}`,
+        paypal: `/checkout/paypal/${orderId}`,
+        stripe: `/checkout/stripe/${orderId}`
+      }
+      const targetRoute = routeMap[paymentMethod] || `/checkout/vietqr/${orderId}`
+      navigate(targetRoute)
+      setCheckingOut(false)
     } catch (error) {
       console.error('Checkout error', error)
       setCheckingOut(false)
@@ -219,7 +213,7 @@ const CartPage = () => {
   useEffect(() => {
     // when switching to delivery, try resolving store coords once
     if (method === 'delivery') {
-      ensureStoreCoords().catch(() => {})
+      ensureStoreCoords().catch(() => { })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [method])
@@ -249,7 +243,7 @@ const CartPage = () => {
         if (addr && addressSource === 'profile') {
           setAddress(addr)
         }
-      } catch {}
+      } catch { }
     }
     if (isAuthenticated) loadProfile()
     return () => {
@@ -274,7 +268,7 @@ const CartPage = () => {
       .then((geo) => {
         if (geo) computeDistanceTo(geo.lat, geo.lon)
       })
-      .catch(() => {})
+      .catch(() => { })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [method, addressSource, profileAddress])
 
@@ -541,7 +535,7 @@ const CartPage = () => {
                                     const found = await searchPlaces(val, opts)
                                     setSuggestions(found)
                                     setSelectedSuggestionIdx('')
-                                  } catch {}
+                                  } catch { }
                                   finally { setSuggestLoading(false) }
                                 }, 300)
                               }}
@@ -567,7 +561,7 @@ const CartPage = () => {
                                     } else {
                                       setShipError('Khong tim thay toa do dia chi nay')
                                     }
-                                  } catch {}
+                                  } catch { }
                                 }
                               }}
                             />
@@ -695,11 +689,11 @@ const CartPage = () => {
                         {method === 'pickup'
                           ? 'Mien phi'
                           : (loadingShip
-                              ? (<span className="d-inline-flex align-items-center gap-2">
-                                  <span className="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></span>
-                                  <span>Dang tinh...</span>
-                                </span>)
-                              : (shipping ? formatCurrency(shipping) : '-'))}
+                            ? (<span className="d-inline-flex align-items-center gap-2">
+                              <span className="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></span>
+                              <span>Dang tinh...</span>
+                            </span>)
+                            : (shipping ? formatCurrency(shipping) : '-'))}
                       </span>
                     </div>
                     <hr />

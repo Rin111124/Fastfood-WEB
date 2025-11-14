@@ -65,18 +65,14 @@ export const customerApi = {
   createOrder: (payload) => post('/api/customer/orders', payload),
   cancelOrder: (orderId) => post(`/api/customer/orders/${orderId}/cancel`, {}),
   // payments
-  createVnpayPaymentUrl: (orderId, params = {}) => {
-    const query = new URLSearchParams()
-    query.set('orderId', orderId)
-    if (params.bankCode) query.set('bankCode', params.bankCode)
-    if (params.locale) query.set('locale', params.locale)
-    return get(`/api/payments/vnpay/create?${query.toString()}`)
-  },
+  createVnpayPaymentUrl: (payload = {}) => post('/api/payments/vnpay/create', payload),
   createCodPayment: (orderId) => post('/api/payments/cod/create', { orderId }),
-  createVietqrPayment: (orderId) => get(`/api/payments/vietqr/create?orderId=${orderId}`),
+  createVietqrPayment: (payload = {}) => post('/api/payments/vietqr/create', payload),
   confirmVietqrPayment: (orderId) => post('/api/payments/vietqr/confirm', { orderId }),
-  createPaypalPayment: (orderId) => get(`/api/payments/paypal/create?orderId=${orderId}`),
-  createStripePaymentIntent: (orderId) => post('/api/payments/stripe/create-intent', { orderId }),
+  cancelVietqrPayment: (orderId, reason) => post('/api/payments/vietqr/cancel', { orderId, reason }),
+  queryVietqrPayment: (orderId) => post('/api/payments/vietqr/query', { orderId }),
+  createPaypalPayment: (payload = {}) => post('/api/payments/paypal/create', payload),
+  createStripePaymentIntent: (payload = {}) => post('/api/payments/stripe/create-intent', payload),
   // cart
   getCart: () => get('/api/customer/cart'),
   addToCart: ({ productId, quantity } = {}) => post('/api/customer/cart/items', { productId, quantity }),

@@ -2,6 +2,12 @@
 
 import paypal from "@paypal/checkout-server-sdk";
 import db from "../../models/index.js";
+import {
+  assignOrderToOnDutyStaff,
+  clearCustomerCart,
+  recordPaymentActivity
+} from "../order/orderFulfillment.service.js";
+import { preparePendingOrderPayload, createOrderFromPendingPayload } from "./pendingOrder.helper.js";
 
 const { Order, Payment, sequelize } = db;
 
@@ -52,25 +58,61 @@ const formatCurrencyValue = (amount) => {
   return value.toFixed(2);
 };
 
-const createPaypalOrder = async (orderId) => {
-  const cfg = ensurePaypalConfig();
-  const order = await Order.findByPk(orderId);
+const ensureOrderAccessible = (order, { orderId, userId, role }) => {
   if (!order) {
     throw new PaypalServiceError("Khong tim thay don hang", 404, "ORDER_NOT_FOUND", { orderId });
   }
 
   if (["canceled", "refunded"].includes(order.status)) {
-    throw new PaypalServiceError("Don hang khong hop le de thanh toan", 400, "ORDER_INVALID_STATUS", { status: order.status });
+    throw new PaypalServiceError("Don hang khong hop le de thanh toan", 400, "ORDER_INVALID_STATUS", {
+      status: order.status,
+      orderId
+    });
   }
 
-  const amountValue = formatCurrencyValue(order.total_amount);
+  const normalizedRole = (role || "").toLowerCase();
+  if (normalizedRole === "admin") {
+    return order;
+  }
+
+  const normalizedUserId = Number(userId);
+  if (!Number.isFinite(normalizedUserId) || Number(order.user_id) !== normalizedUserId) {
+    throw new PaypalServiceError("Khong du quyen thanh toan don hang nay", 403, "ORDER_FORBIDDEN", {
+      orderId
+    });
+  }
+
+  return order;
+};
+
+const createPaypalOrder = async (orderId, context = {}, options = {}) => {
+  const cfg = ensurePaypalConfig();
+  let order = null;
+  let pendingOrder = null;
+  if (orderId) {
+    order = await Order.findByPk(orderId);
+    ensureOrderAccessible(order, { orderId, userId: context.userId, role: context.role });
+  } else if (options.pendingOrder) {
+    try {
+      pendingOrder = await preparePendingOrderPayload(options.pendingOrder, {
+        userId: context.userId,
+        defaultPaymentMethod: "paypal"
+      });
+    } catch (error) {
+      throw new PaypalServiceError(error.message, 422, error.code || "PENDING_ORDER_INVALID");
+    }
+  } else {
+    throw new PaypalServiceError("Thieu orderId hoac orderPayload", 400, "PAYPAL_ORDER_REQUIRED");
+  }
+
+  const amountValue = formatCurrencyValue(order ? order.total_amount : pendingOrder.totalAmount);
   const request = new paypal.orders.OrdersCreateRequest();
   request.prefer("return=representation");
   request.requestBody({
     intent: "CAPTURE",
     purchase_units: [
       {
-        reference_id: `ORDER-${orderId}`,
+        reference_id: `ORDER-${order ? order.order_id : "pending"}`,
         amount: {
           currency_code: cfg.currency.toUpperCase(),
           value: amountValue
@@ -92,14 +134,15 @@ const createPaypalOrder = async (orderId) => {
   }
 
   await Payment.create({
-    order_id: orderId,
+    order_id: order ? order.order_id : null,
     provider: "paypal",
-    amount: Number(order.total_amount || 0),
+    amount: Number(order ? order.total_amount || 0 : pendingOrder.totalAmount),
     currency: cfg.currency.toUpperCase(),
     txn_ref: response.result.id,
     status: "initiated",
     meta: {
-      paypal_order: response.result
+      paypal_order: response.result,
+      ...(pendingOrder ? { pending_order: pendingOrder } : {})
     }
   });
 
@@ -112,21 +155,47 @@ const markPaymentAsSuccess = async (paypalOrderId, capturePayload = {}) => {
     return null;
   }
 
-  await payment.update({
-    status: "success",
-    meta: {
-      ...(payment.meta || {}),
-      paypal_capture: capturePayload
+  let orderUserId = null;
+  await sequelize.transaction(async (t) => {
+    let order = null;
+    let needsFulfillment = false;
+    if (!payment.order_id && payment.meta?.pending_order) {
+      order = await createOrderFromPendingPayload(payment.meta.pending_order, { transaction: t });
+      payment.order_id = order.order_id;
+      needsFulfillment = true;
+    } else if (payment.order_id) {
+      order = await Order.findByPk(payment.order_id, { transaction: t });
+    }
+
+    await payment.update(
+      {
+        status: "success",
+        order_id: payment.order_id,
+        meta: {
+          ...(payment.meta || {}),
+          paypal_capture: capturePayload
+        }
+      },
+      { transaction: t }
+    );
+
+    if (order) {
+      if (needsFulfillment || !["paid", "completed"].includes(order.status)) {
+        if (!["paid", "completed"].includes(order.status)) {
+          await order.update({ status: "paid" }, { transaction: t });
+        }
+        await assignOrderToOnDutyStaff(order, { transaction: t });
+        await recordPaymentActivity(order, "paypal", {
+          paymentId: payment.payment_id,
+          txn_ref: payment.txn_ref
+        });
+      }
+      orderUserId = order.user_id;
     }
   });
 
-  if (payment.order_id) {
-    await sequelize.transaction(async (t) => {
-      const order = await Order.findByPk(payment.order_id, { transaction: t });
-      if (order && !["paid", "completed"].includes(order.status)) {
-        await order.update({ status: "paid" }, { transaction: t });
-      }
-    });
+  if (orderUserId) {
+    await clearCustomerCart(orderUserId);
   }
   return payment;
 };
@@ -198,4 +267,3 @@ export {
   verifyPaypalWebhook,
   handlePaypalWebhookEvent
 };
-

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AdminStatusAlert from '../../../components/admin/AdminStatusAlert'
 import Spinner from '../../../components/common/Spinner'
 import adminApi from '../../../services/adminApi'
@@ -35,7 +35,11 @@ const AdminPayments = () => {
     }
   }
 
+  const hasLoadedRef = useRef(false)
+
   useEffect(() => {
+    if (hasLoadedRef.current) return
+    hasLoadedRef.current = true
     loadPayments()
   }, [])
 

@@ -12,8 +12,13 @@ const VietQrCheckout = () => {
 
   useEffect(() => {
     const run = async () => {
+      if (!orderId) {
+        setError('Thieu ma don hang')
+        setLoading(false)
+        return
+      }
       try {
-        const payload = await customerApi.createVietqrPayment(Number(orderId))
+        const payload = await customerApi.createVietqrPayment({ orderId: Number(orderId) })
         setData(payload)
       } catch (e) {
         setError(e?.message || 'Khong tao duoc QR thanh toan')
@@ -25,6 +30,7 @@ const VietQrCheckout = () => {
   }, [orderId])
 
   const handleConfirm = async () => {
+    if (!orderId) return
     setConfirming(true)
     try {
       await customerApi.confirmVietqrPayment(Number(orderId))
@@ -77,4 +83,3 @@ const VietQrCheckout = () => {
 }
 
 export default VietQrCheckout
-

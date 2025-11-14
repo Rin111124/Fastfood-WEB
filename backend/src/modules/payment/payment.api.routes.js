@@ -9,6 +9,9 @@ import {
   createCodHandler,
   createVietqrHandler,
   confirmVietqrHandler,
+  cancelVietqrHandler,
+  queryVietqrHandler,
+  vietqrWebhookHandler,
   createPaypalOrderHandler,
   paypalReturnHandler,
   paypalCancelHandler,
@@ -45,8 +48,11 @@ router.post("/stripe/webhook", stripeWebhookHandler);
 // COD & VietQR
 router.post("/cod/create", requireRoles("customer", "admin"), createCodHandler);
 router.get("/cod/create", requireRoles("customer", "admin"), createCodHandler);
+router.post("/vietqr/webhook", vietqrWebhookHandler);
 router.post("/vietqr/create", requireRoles("customer", "admin"), createVietqrHandler);
 router.get("/vietqr/create", requireRoles("customer", "admin"), createVietqrHandler);
 router.post("/vietqr/confirm", requireRoles("customer", "admin"), confirmVietqrHandler);
+router.post("/vietqr/cancel", requireRoles("customer", "admin"), cancelVietqrHandler);
+router.post("/vietqr/query", requireRoles("customer", "admin"), queryVietqrHandler);
 
 export default router;

@@ -22,12 +22,22 @@ export const formatMonthLabel = (value) => {
   }
 }
 
+const toSafeDate = (value) => {
+  if (value === undefined || value === null || value === '') return null
+  const candidate = typeof value === 'number' ? value : String(value).trim()
+  if (!candidate) return null
+  const date = new Date(candidate)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 export const formatDateTime = (value) => {
   try {
-    return format(new Date(value), 'dd/MM/yyyy HH:mm')
+    const date = toSafeDate(value)
+    if (!date) return value ?? '-'
+    return format(date, 'dd/MM/yyyy HH:mm')
   } catch (error) {
     console.error('formatDateTime failed', error)
-    return value
+    return value ?? '-'
   }
 }
 

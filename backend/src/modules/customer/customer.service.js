@@ -1,11 +1,14 @@
 "use strict";
 
 import { Op, fn, col, literal } from "sequelize";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import db from "../../models/index.js";
 import { ensureProductImageColumns, ensureNewsImageColumns } from "../../utils/schemaEnsurer.js";
 import { mapImageFields } from "../../utils/imageMapper.js";
 import { isMissingColumnError, isMissingTableError } from "../../utils/dbErrors.js";
 import { generateAIReply } from "../chat/ai.service.js";
+import { assignOrderToOnDutyStaff } from "../order/orderAssignment.helper.js";
 
 const {
   sequelize,
@@ -13,6 +16,8 @@ const {
   Order,
   OrderItem,
   Product,
+  ProductOption,
+  Payment,
   Promotion,
   News,
   Cart,
@@ -61,6 +66,256 @@ const ensureCustomerUser = async (userId) => {
   }
   return user;
 };
+
+const sanitizeNote = (value) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed.slice(0, 255) : null;
+};
+
+const sanitizePhoneNumber = (value) => {
+  if (!value) return null;
+  return String(value)
+    .replace(/[^0-9+]/g, "")
+    .trim();
+};
+
+const getCartItemsFromPayload = (payload = {}) => {
+  const candidates = payload.items ?? payload.cart_items ?? payload.cartItems;
+  if (!Array.isArray(candidates) || !candidates.length) {
+    throw new CustomerServiceError("Don hang phai co it nhat mot san pham", 422, "ORDER_ITEMS_REQUIRED");
+  }
+  return candidates;
+};
+
+const normalizeCartItems = (items = []) =>
+  items.map((entry, index) => {
+    const productId = Number(entry.product_id ?? entry.productId);
+    if (!productId || Number.isNaN(productId)) {
+      throw new CustomerServiceError(`Ma san pham khong hop le tai vi tri ${index + 1}`, 422, "PRODUCT_INVALID");
+    }
+    const quantity = Number(entry.quantity ?? entry.qty ?? 1);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      throw new CustomerServiceError(`So luong phai lon hon 0 tai vi tri ${index + 1}`, 422, "QUANTITY_INVALID");
+    }
+    const optionsRaw =
+      Array.isArray(entry.selected_options) || Array.isArray(entry.selectedOptions)
+        ? entry.selected_options || entry.selectedOptions
+        : [];
+    const selectedOptions = optionsRaw
+      .map((option) => {
+        const optionId = Number(option?.option_id ?? option?.optionId ?? option);
+        return Number.isFinite(optionId) ? { optionId } : null;
+      })
+      .filter(Boolean);
+    return {
+      productId,
+      quantity,
+      selectedOptions
+    };
+  });
+
+const buildCartOrderDetails = async (items) => {
+  const normalized = normalizeCartItems(items);
+  const uniqueProductIds = [...new Set(normalized.map((item) => item.productId))];
+  const products = await Product.findAll({
+    where: {
+      product_id: uniqueProductIds,
+      is_active: true
+    }
+  });
+  if (products.length !== uniqueProductIds.length) {
+    const missing = uniqueProductIds.filter((id) => !products.some((product) => product.product_id === id));
+    throw new CustomerServiceError("Mot so san pham khong ton tai hoac da ngung ban", 404, "PRODUCT_NOT_FOUND", { missing });
+  }
+  const productMap = products.reduce((acc, product) => acc.set(product.product_id, product), new Map());
+
+  const optionIds = normalized.flatMap((item) => item.selectedOptions.map((opt) => opt.optionId));
+  const uniqueOptionIds = [...new Set(optionIds)].filter((id) => Number.isFinite(id));
+  let optionMap = new Map();
+  if (uniqueOptionIds.length) {
+    const options = await ProductOption.findAll({
+      where: {
+        option_id: uniqueOptionIds,
+        is_active: true
+      }
+    });
+    optionMap = options.reduce((acc, option) => acc.set(option.option_id, option), new Map());
+  }
+
+  const orderItemsPayload = normalized.map((item, index) => {
+    const product = productMap.get(item.productId);
+    if (!product) {
+      throw new CustomerServiceError(`San pham ${item.productId} khong hop le`, 404, "PRODUCT_NOT_FOUND", { productId: item.productId });
+    }
+    const optionDetails = item.selectedOptions.map((opt) => {
+      const option = optionMap.get(opt.optionId);
+      if (!option) {
+        throw new CustomerServiceError("Khong tim thay tuy chon", 404, "OPTION_NOT_FOUND", { optionId: opt.optionId });
+      }
+      if (option.product_id !== product.product_id) {
+        throw new CustomerServiceError("Tuy chon khong phu hop voi san pham", 400, "OPTION_MISMATCH", {
+          productId: product.product_id,
+          optionId: opt.optionId
+        });
+      }
+      return option;
+    });
+    const optionAdjustment = optionDetails.reduce((sum, option) => sum + Number(option.price_adjustment || 0), 0);
+    const unitPrice = Number((Number(product.price || 0) + optionAdjustment).toFixed(2));
+    return {
+      product_id: product.product_id,
+      quantity: item.quantity,
+      price: unitPrice
+    };
+  });
+
+  const totalAmount = orderItemsPayload.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  return { orderItemsPayload, totalAmount: Number(totalAmount.toFixed(2)) };
+};
+
+const ORDER_INCLUDES = [
+  {
+    model: OrderItem,
+    include: [{ model: Product }]
+  },
+  { model: Payment }
+];
+
+const persistOrderRecord = async (
+  { userId, totalAmount, status, paymentMethod, createdByEmployeeId, originalAmount, note, orderItemsPayload, expectedDeliveryTime },
+  transaction
+) => {
+  const order = await Order.create(
+    {
+      user_id: userId,
+      total_amount: totalAmount,
+      status,
+      payment_method: paymentMethod || null,
+      created_by_employee_id: createdByEmployeeId || null,
+      original_amount: originalAmount !== undefined ? originalAmount : totalAmount,
+      note: sanitizeNote(note),
+      expected_delivery_time: expectedDeliveryTime ? new Date(expectedDeliveryTime) : null
+    },
+    { transaction }
+  );
+  if (orderItemsPayload.length) {
+    await OrderItem.bulkCreate(
+      orderItemsPayload.map((item) => ({ ...item, order_id: order.order_id })),
+      { transaction }
+    );
+  }
+  return order;
+};
+
+const fetchOrderWithDetails = async (orderId, transaction) => {
+  const order = await Order.findByPk(orderId, {
+    include: ORDER_INCLUDES,
+    transaction
+  });
+  if (!order) {
+    throw new CustomerServiceError("Khong tim thay don hang", 404, "ORDER_NOT_FOUND", { orderId });
+  }
+  return order;
+};
+
+const ensureStaffUser = async (userId) => {
+  const user = await User.findByPk(userId);
+  if (!user || !["staff", "admin"].includes(user.role)) {
+    throw new CustomerServiceError("Nhan vien khong hop le", 403, "STAFF_FORBIDDEN", { userId });
+  }
+  return user;
+};
+
+const ensureAdminUser = async (userId) => {
+  const user = await User.findByPk(userId);
+  if (!user || user.role !== "admin") {
+    throw new CustomerServiceError("Quyen admin khong duoc phep", 403, "ADMIN_FORBIDDEN", { userId });
+  }
+  return user;
+};
+
+const createGuestCustomer = async ({ name, phone, email } = {}, transaction) => {
+  const timestamp = Date.now();
+  const suffix = crypto.randomBytes(3).toString("hex");
+  const username = `guest-${timestamp}-${suffix}`.slice(0, 100);
+  const password = crypto.randomBytes(8).toString("hex");
+  const hashed = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+  const normalizedEmail =
+    typeof email === "string" && email.includes("@") ? email.toLowerCase() : `${username}@guest.local`;
+  const user = await User.create(
+    {
+      username,
+      email: normalizedEmail,
+      password: hashed,
+      role: "customer",
+      status: "active",
+      full_name: name ? String(name).trim() : "Khach hang",
+      phone_number: phone
+    },
+    { transaction }
+  );
+  return user.user_id;
+};
+
+const resolveCustomerAccount = async (customerInfo = {}, transaction) => {
+  if (customerInfo.customer_id) {
+    const existing = await User.findOne({
+      where: {
+        user_id: customerInfo.customer_id,
+        role: "customer"
+      },
+      transaction
+    });
+    if (!existing) {
+      throw new CustomerServiceError("Khong tim thay khach hang", 404, "CUSTOMER_NOT_FOUND", {
+        customer_id: customerInfo.customer_id
+      });
+    }
+    return existing.user_id;
+  }
+  const phone = sanitizePhoneNumber(customerInfo.phone_number || customerInfo.phone || customerInfo.mobile);
+  if (!phone) {
+    throw new CustomerServiceError("Thieu thong tin khach hang", 400, "CUSTOMER_INFO_REQUIRED");
+  }
+  const existing = await User.findOne({
+    where: {
+      phone_number: phone,
+      role: "customer"
+    },
+    transaction
+  });
+  if (existing) return existing.user_id;
+  return createGuestCustomer(
+    {
+      name: customerInfo.name || customerInfo.full_name,
+      phone,
+      email: customerInfo.email || customerInfo.email_address
+    },
+    transaction
+  );
+};
+
+const createCashPaymentRecord = async ({ orderId, paymentMethod, amount, employeeId, transaction }) => {
+  const normalized = String(paymentMethod || "cash").trim().toLowerCase();
+  if (!["cash", "cod"].includes(normalized)) return;
+  await Payment.create(
+    {
+      order_id: orderId,
+      provider: normalized === "cash" ? "cash" : "cod",
+      amount,
+      currency: "VND",
+      status: "success",
+      meta: {
+        method: normalized,
+        handled_by: employeeId
+      }
+    },
+    { transaction }
+  );
+};
+
+const BCRYPT_SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS || 10);
 
 const PROFILE_FIELDS = ["full_name", "phone_number", "address", "gender"];
 const VALID_GENDERS = new Set(["male", "female", "other", "unknown"]);
@@ -414,92 +669,112 @@ const getCustomerOrder = async (userId, orderId) => {
 };
 
 const createOrderForCustomer = async (userId, payload = {}) => {
-  const items = Array.isArray(payload.items) ? payload.items : [];
-  if (!items.length) {
-    throw new CustomerServiceError("Don hang phai co it nhat mot san pham", 422, "ORDER_ITEMS_REQUIRED");
-  }
-
-  const sanitizedItems = items.map((item, index) => {
-    const productId = Number(item.productId ?? item.product_id);
-    const quantity = Number(item.quantity);
-    if (!productId || Number.isNaN(productId)) {
-      throw new CustomerServiceError(`Ma san pham khong hop le tai vi tri ${index + 1}`, 422, "PRODUCT_INVALID");
-    }
-    if (!quantity || Number.isNaN(quantity) || quantity <= 0) {
-      throw new CustomerServiceError(`So luong phai lon hon 0 tai vi tri ${index + 1}`, 422, "QUANTITY_INVALID");
-    }
-    return { productId, quantity };
-  });
-
-  const productIds = [...new Set(sanitizedItems.map((item) => item.productId))];
-  const supportsBlob = (await ensureProductImageColumns()) !== false;
-  const productImageAttributes = resolveProductImageAttributes(supportsBlob);
-  let products;
-  try {
-    products = await Product.findAll({
-      where: { product_id: productIds, is_active: true },
-      attributes: supportsBlob ? undefined : excludeImageColumnsWhenUnsupported(supportsBlob)
-    });
-  } catch (error) {
-    if (isMissingTableError(error)) {
-      throw new CustomerServiceError("He thong chua khoi tao du lieu san pham", 500, "PRODUCT_TABLE_MISSING");
-    }
-    throw error;
-  }
-
-  if (products.length !== productIds.length) {
-    const missing = productIds.filter((id) => !products.some((product) => product.product_id === id));
-    throw new CustomerServiceError("Mot so san pham khong ton tai hoac da ngung ban", 404, "PRODUCT_NOT_FOUND", { missing });
-  }
-
-  const productMap = products.reduce((acc, product) => {
-    acc[product.product_id] = product;
-    return acc;
-  }, {});
-
-  const orderItemsPayload = sanitizedItems.map((item) => {
-    const product = productMap[item.productId];
-    return {
-      product_id: product.product_id,
-      quantity: item.quantity,
-      price: Number(product.price)
-    };
-  });
-
-  const totalAmount = orderItemsPayload.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
-
-  return sequelize.transaction(async (transaction) => {
-    const order = await Order.create(
+  await ensureCustomerUser(userId);
+  const cartItems = getCartItemsFromPayload(payload);
+  const { orderItemsPayload, totalAmount } = await buildCartOrderDetails(cartItems);
+  const order = await sequelize.transaction(async (transaction) => {
+    const created = await persistOrderRecord(
       {
-        user_id: userId,
-        total_amount: totalAmount,
+        userId,
+        totalAmount,
         status: "pending",
-        note: payload.note ? String(payload.note).trim() : null,
-        expected_delivery_time: payload.expectedDeliveryTime ? new Date(payload.expectedDeliveryTime) : null
+        paymentMethod: payload.payment_method || "online",
+        createdByEmployeeId: null,
+        originalAmount: totalAmount,
+        note: payload.note,
+        expectedDeliveryTime: payload.expectedDeliveryTime,
+        orderItemsPayload
       },
-      { transaction }
+      transaction
     );
+    await assignOrderToOnDutyStaff(created, { transaction });
+    const detailed = await fetchOrderWithDetails(created.order_id, transaction);
+    return mapOrderPlain(detailed);
+  });
+  return order;
+};
 
-    await OrderItem.bulkCreate(
-      orderItemsPayload.map((item) => ({
-        ...item,
-        order_id: order.order_id
-      })),
-      { transaction }
+const createOrderForEmployee = async (employeeId, payload = {}) => {
+  await ensureStaffUser(employeeId);
+  const cartItems = getCartItemsFromPayload(payload);
+  const { orderItemsPayload, totalAmount } = await buildCartOrderDetails(cartItems);
+  const customerInfo = payload.customer_info || {};
+  const paymentMethod = payload.payment_method || "cash";
+
+  const order = await sequelize.transaction(async (transaction) => {
+    const customerId = await resolveCustomerAccount(customerInfo, transaction);
+    const created = await persistOrderRecord(
+      {
+        userId: customerId,
+        totalAmount,
+        status: "confirmed",
+        paymentMethod,
+        createdByEmployeeId: employeeId,
+        originalAmount: totalAmount,
+        note: payload.notes,
+        expectedDeliveryTime: payload.expectedDeliveryTime,
+        orderItemsPayload
+      },
+      transaction
     );
-
-    const created = await Order.findByPk(order.order_id, {
-      include: [
-        {
-          model: OrderItem,
-          include: [{ model: Product, attributes: productImageAttributes }]
-        }
-      ],
+    await createCashPaymentRecord({
+      orderId: created.order_id,
+      paymentMethod,
+      amount: totalAmount,
+      employeeId,
       transaction
     });
-
-    return mapOrderPlain(created);
+    const detailed = await fetchOrderWithDetails(created.order_id, transaction);
+    return mapOrderPlain(detailed);
   });
+
+  return order;
+};
+
+const createOrderForAdmin = async (adminId, payload = {}) => {
+  await ensureAdminUser(adminId);
+  const cartItems = getCartItemsFromPayload(payload);
+  const { orderItemsPayload, totalAmount } = await buildCartOrderDetails(cartItems);
+  let finalTotal = totalAmount;
+  if (typeof payload.override_price !== "undefined" && payload.override_price !== null) {
+    finalTotal = Number(payload.override_price);
+  }
+  if (payload.is_complimentary) {
+    finalTotal = Number(payload.override_price ?? 0);
+  }
+  if (Number.isNaN(finalTotal) || finalTotal < 0) {
+    throw new CustomerServiceError("Gia tri don hang khong hop le", 422, "ORDER_TOTAL_INVALID");
+  }
+  const paymentMethod = payload.payment_method || "cash";
+
+  const order = await sequelize.transaction(async (transaction) => {
+    const customerId = await resolveCustomerAccount(payload.customer_info || {}, transaction);
+    const created = await persistOrderRecord(
+      {
+        userId: customerId,
+        totalAmount: finalTotal,
+        status: "confirmed",
+        paymentMethod,
+        createdByEmployeeId: adminId,
+        originalAmount: totalAmount,
+        note: payload.notes,
+        expectedDeliveryTime: payload.expectedDeliveryTime,
+        orderItemsPayload
+      },
+      transaction
+    );
+    await createCashPaymentRecord({
+      orderId: created.order_id,
+      paymentMethod,
+      amount: finalTotal,
+      employeeId: adminId,
+      transaction
+    });
+    const detailed = await fetchOrderWithDetails(created.order_id, transaction);
+    return mapOrderPlain(detailed);
+  });
+
+  return order;
 };
 
 const cancelCustomerOrder = async (userId, orderId) => {
@@ -1010,6 +1285,8 @@ export {
   listOrdersForCustomer,
   getCustomerOrder,
   createOrderForCustomer,
+  createOrderForEmployee,
+  createOrderForAdmin,
   cancelCustomerOrder,
   getProfile,
   createProfile,

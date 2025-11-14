@@ -62,9 +62,32 @@ const StripeCheckout = () => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const style = document.createElement('style')
+    style.id = 'stripe-devtools-fix'
+    style.textContent = `
+      [class*="StripeDevTools"],
+      [class*="stripe-dev-tools"],
+      [data-stripe-devtools],
+      #stripe-dev-tools,
+      #StripeDevTools {
+        display: none !important;
+      }
+    `
+    document.head.appendChild(style)
+    return () => {
+      style.remove()
+    }
+  }, [])
+
+  useEffect(() => {
     const fetchIntent = async () => {
+      if (!orderId) {
+        setError('Thieu ma don hang')
+        setLoading(false)
+        return
+      }
       try {
-        const data = await customerApi.createStripePaymentIntent(Number(orderId))
+        const data = await customerApi.createStripePaymentIntent({ orderId: Number(orderId) })
         setClientSecret(data.clientSecret)
         setMeta({ amount: data.amount, currency: data.currency || 'VND' })
       } catch (err) {
@@ -73,12 +96,7 @@ const StripeCheckout = () => {
         setLoading(false)
       }
     }
-    if (orderId) {
-      fetchIntent()
-    } else {
-      setError('Thieu ma don hang')
-      setLoading(false)
-    }
+    fetchIntent()
   }, [orderId])
 
   const options = useMemo(() => {
@@ -129,7 +147,7 @@ const StripeCheckout = () => {
       <p className="text-muted">
         Don hang #{orderId} - So tien {Number(meta.amount || 0).toLocaleString('vi-VN')} {meta.currency}
       </p>
-      <Elements stripe={stripePromise} options={options}>
+      <Elements stripe={stripePromise} options={options} key={clientSecret}>
         <StripeCheckoutForm amount={meta.amount} currency={meta.currency} navigateTo={navigate} />
       </Elements>
     </div>
@@ -137,4 +155,3 @@ const StripeCheckout = () => {
 }
 
 export default StripeCheckout
-

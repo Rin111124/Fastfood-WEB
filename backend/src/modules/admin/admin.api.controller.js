@@ -1,6 +1,7 @@
 import { Op } from "sequelize";
 import {
   AdminServiceError,
+  logAction,
   getDashboardMetrics,
   listUsers,
   createUser,
@@ -52,6 +53,7 @@ import {
 } from "./admin.service.js";
 import db from "../../models/index.js";
 import { mapImageFields } from "../../utils/imageMapper.js";
+import { createOrderForAdmin, createOrderForEmployee } from "../customer/customer.service.js";
 
 const { User } = db;
 
@@ -363,7 +365,7 @@ const listStaffHandler = async (req, res) => {
     const limit = parseLimit(req.query.limit, 100);
     const staff = await User.findAll({
       where: { role: { [Op.in]: ["staff", "shipper"] } },
-      attributes: ["user_id", "full_name", "username", "email", "status"],
+      attributes: ["user_id", "full_name", "username", "email", "status", "role"],
       order: [["updated_at", "DESC"]],
       limit
     });
@@ -628,6 +630,30 @@ const deleteProductOptionHandler = async (req, res) => {
   }
 };
 
+const createStaffOrderHandler = async (req, res) => {
+  try {
+    const actorId = resolveActorId(req);
+    if (!actorId) {
+      return res.status(401).json({ success: false, message: "Chua dang nhap" });
+    }
+    const role = String(req?.auth?.role || "").toLowerCase();
+    const payload = req.body || {};
+    const order =
+      role === "admin"
+        ? await createOrderForAdmin(actorId, payload)
+        : await createOrderForEmployee(actorId, payload);
+    await logAction(actorId, "CREATE_ORDER", "orders", {
+      orderId: order.order_id,
+      customer_id: order.user_id,
+      payment_method: order.payment_method,
+      role
+    });
+    return res.status(201).json({ success: true, data: order });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
 const toggleProductOptionAvailabilityHandler = async (req, res) => {
   try {
     const actorId = resolveActorId(req);
@@ -688,7 +714,7 @@ const updateOrderStatusHandler = async (req, res) => {
 const refundOrderHandler = async (req, res) => {
   try {
     const actorId = resolveActorId(req);
-    const order = await markOrderRefund(req.params.orderId, req.body || {}, actorId);
+    const order = await markOrderRefund(req.params.orderId, actorId);
     return res.json({ success: true, data: toPlain(order) });
   } catch (error) {
     return handleError(res, error);
@@ -913,6 +939,7 @@ export {
   updateProductOptionHandler,
   toggleProductOptionAvailabilityHandler,
   deleteProductOptionHandler,
+  createStaffOrderHandler,
   listOrdersHandler,
   listPaymentsHandler,
   assignOrderHandler,
@@ -935,4 +962,3 @@ export {
   listShiftsHandler,
   scheduleShiftHandler
 };
-
