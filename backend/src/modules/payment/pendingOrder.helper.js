@@ -116,11 +116,23 @@ const preparePendingOrderPayload = async (rawPayload = {}, context = {}) => {
     throw new PendingOrderError("Vui long chon san pham truoc khi thanh toan");
   }
 
-  const { orderItemsPayload, totalAmount } = await buildOrderItemsPayload(items);
+  const { orderItemsPayload, totalAmount: itemsSubtotal } = await buildOrderItemsPayload(items);
+  const shippingFeeRaw =
+    rawPayload?.shipping_fee ??
+    rawPayload?.shippingFee ??
+    rawPayload?.delivery_fee ??
+    rawPayload?.deliveryFee ??
+    context?.shippingFee ??
+    0;
+  const shippingFeeNumber = Number(shippingFeeRaw);
+  const shippingFee = Number.isFinite(shippingFeeNumber) && shippingFeeNumber > 0 ? shippingFeeNumber : 0;
+  const totalAmount = Number((itemsSubtotal + shippingFee).toFixed(2));
   return {
     userId,
     orderItemsPayload,
     totalAmount,
+    itemsSubtotal,
+    shippingFee,
     paymentMethod: (rawPayload?.paymentMethod || rawPayload?.payment_method || context.defaultPaymentMethod || "online").toLowerCase(),
     note: sanitizeText(rawPayload?.note || rawPayload?.memo),
     expectedDeliveryTime: rawPayload?.expectedDeliveryTime || rawPayload?.expected_delivery_time || null
@@ -135,9 +147,11 @@ const createOrderFromPendingPayload = async (pendingOrder, { transaction } = {})
     {
       user_id: pendingOrder.userId,
       total_amount: pendingOrder.totalAmount,
+      delivery_fee: pendingOrder.shippingFee || 0,
       status: "paid",
       payment_method: pendingOrder.paymentMethod || "online",
-      original_amount: pendingOrder.totalAmount,
+      original_amount:
+        pendingOrder.itemsSubtotal !== undefined ? pendingOrder.itemsSubtotal : pendingOrder.totalAmount,
       note: pendingOrder.note || null,
       expected_delivery_time: pendingOrder.expectedDeliveryTime
         ? new Date(pendingOrder.expectedDeliveryTime)

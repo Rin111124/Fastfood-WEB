@@ -1,6 +1,6 @@
 "use strict";
 
-import { Op, fn, col, literal } from "sequelize";
+import { Op, fn, col, literal, UniqueConstraintError } from "sequelize";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import db from "../../models/index.js";
@@ -8,7 +8,7 @@ import { ensureProductImageColumns, ensureNewsImageColumns } from "../../utils/s
 import { mapImageFields } from "../../utils/imageMapper.js";
 import { isMissingColumnError, isMissingTableError } from "../../utils/dbErrors.js";
 import { generateAIReply } from "../chat/ai.service.js";
-import { assignOrderToOnDutyStaff } from "../order/orderAssignment.helper.js";
+import { prepareOrderForFulfillment, assignOrderToOnDutyStaff } from "../order/orderFulfillment.service.js";
 
 const {
   sequelize,
@@ -183,13 +183,25 @@ const ORDER_INCLUDES = [
 ];
 
 const persistOrderRecord = async (
-  { userId, totalAmount, status, paymentMethod, createdByEmployeeId, originalAmount, note, orderItemsPayload, expectedDeliveryTime },
+  {
+    userId,
+    totalAmount,
+    status,
+    paymentMethod,
+    createdByEmployeeId,
+    originalAmount,
+    note,
+    orderItemsPayload,
+    expectedDeliveryTime,
+    deliveryFee
+  },
   transaction
 ) => {
   const order = await Order.create(
     {
       user_id: userId,
       total_amount: totalAmount,
+      delivery_fee: Number.isFinite(Number(deliveryFee)) ? Number(deliveryFee) : 0,
       status,
       payment_method: paymentMethod || null,
       created_by_employee_id: createdByEmployeeId || null,
@@ -371,9 +383,9 @@ const hasMeaningfulProfileValue = (payload = {}) =>
 const profileHasStoredDetails = (user) =>
   Boolean(
     user?.full_name ||
-      user?.phone_number ||
-      user?.address ||
-      (user?.gender && user.gender !== "unknown")
+    user?.phone_number ||
+    user?.address ||
+    (user?.gender && user.gender !== "unknown")
   );
 
 const listActiveProducts = async ({ search, categoryId, limit } = {}) => {
@@ -483,8 +495,13 @@ const listNews = async ({ limit, search } = {}) => {
 const mapOrderPlain = (order) => {
   const plain = order.get({ plain: true });
   const items = Array.isArray(plain.OrderItems) ? plain.OrderItems : [];
+  const itemsSubtotal = items.reduce(
+    (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0),
+    0
+  );
   return {
     ...plain,
+    items_subtotal: Number(itemsSubtotal.toFixed(2)),
     items: items.map((item) => ({
       order_item_id: item.order_item_id,
       product_id: item.product_id,
@@ -671,23 +688,36 @@ const getCustomerOrder = async (userId, orderId) => {
 const createOrderForCustomer = async (userId, payload = {}) => {
   await ensureCustomerUser(userId);
   const cartItems = getCartItemsFromPayload(payload);
-  const { orderItemsPayload, totalAmount } = await buildCartOrderDetails(cartItems);
-  const order = await sequelize.transaction(async (transaction) => {
-    const created = await persistOrderRecord(
-      {
-        userId,
-        totalAmount,
-        status: "pending",
-        paymentMethod: payload.payment_method || "online",
-        createdByEmployeeId: null,
-        originalAmount: totalAmount,
-        note: payload.note,
-        expectedDeliveryTime: payload.expectedDeliveryTime,
-        orderItemsPayload
-      },
-      transaction
-    );
-    await assignOrderToOnDutyStaff(created, { transaction });
+    const { orderItemsPayload, totalAmount: itemsSubtotal } = await buildCartOrderDetails(cartItems);
+    const shippingFeeRaw =
+      payload?.shipping_fee ?? payload?.shippingFee ?? payload?.delivery_fee ?? payload?.deliveryFee ?? 0;
+    const shippingFeeNumber = Number(shippingFeeRaw);
+    const deliveryFee = Number.isFinite(shippingFeeNumber) && shippingFeeNumber > 0 ? shippingFeeNumber : 0;
+    const finalTotal = Number((itemsSubtotal + deliveryFee).toFixed(2));
+    const normalizedPayment = String(payload.payment_method || "online").toLowerCase();
+    const initialStatus = normalizedPayment === "cod" ? "confirmed" : "pending";
+    const order = await sequelize.transaction(async (transaction) => {
+      const created = await persistOrderRecord(
+        {
+          userId,
+          totalAmount: finalTotal,
+          status: initialStatus,
+          paymentMethod: normalizedPayment,
+          createdByEmployeeId: null,
+          originalAmount: itemsSubtotal,
+          note: payload.note,
+          expectedDeliveryTime: payload.expectedDeliveryTime,
+          orderItemsPayload,
+          deliveryFee
+        },
+        transaction
+      );
+
+    // Always prepare order for fulfillment to emit Socket.IO events
+    // For COD (status=confirmed), this will assign staff and notify them
+    // For online payment (status=pending), this will just assign staff
+    await prepareOrderForFulfillment(created, { transaction });
+
     const detailed = await fetchOrderWithDetails(created.order_id, transaction);
     return mapOrderPlain(detailed);
   });
@@ -697,33 +727,40 @@ const createOrderForCustomer = async (userId, payload = {}) => {
 const createOrderForEmployee = async (employeeId, payload = {}) => {
   await ensureStaffUser(employeeId);
   const cartItems = getCartItemsFromPayload(payload);
-  const { orderItemsPayload, totalAmount } = await buildCartOrderDetails(cartItems);
-  const customerInfo = payload.customer_info || {};
-  const paymentMethod = payload.payment_method || "cash";
+    const { orderItemsPayload, totalAmount: itemsSubtotal } = await buildCartOrderDetails(cartItems);
+    const shippingFeeRaw =
+      payload?.shipping_fee ?? payload?.shippingFee ?? payload?.delivery_fee ?? payload?.deliveryFee ?? 0;
+    const shippingFeeNumber = Number(shippingFeeRaw);
+    const deliveryFee = Number.isFinite(shippingFeeNumber) && shippingFeeNumber > 0 ? shippingFeeNumber : 0;
+    const totalAmount = Number((itemsSubtotal + deliveryFee).toFixed(2));
+    const customerInfo = payload.customer_info || {};
+    const paymentMethod = payload.payment_method || "cash";
 
-  const order = await sequelize.transaction(async (transaction) => {
-    const customerId = await resolveCustomerAccount(customerInfo, transaction);
+    const order = await sequelize.transaction(async (transaction) => {
+      const customerId = await resolveCustomerAccount(customerInfo, transaction);
     const created = await persistOrderRecord(
       {
         userId: customerId,
         totalAmount,
         status: "confirmed",
-        paymentMethod,
-        createdByEmployeeId: employeeId,
-        originalAmount: totalAmount,
-        note: payload.notes,
-        expectedDeliveryTime: payload.expectedDeliveryTime,
-        orderItemsPayload
-      },
-      transaction
-    );
+          paymentMethod,
+          createdByEmployeeId: employeeId,
+          originalAmount: itemsSubtotal,
+          note: payload.notes,
+          expectedDeliveryTime: payload.expectedDeliveryTime,
+          orderItemsPayload,
+          deliveryFee
+        },
+        transaction
+      );
     await createCashPaymentRecord({
       orderId: created.order_id,
       paymentMethod,
-      amount: totalAmount,
-      employeeId,
-      transaction
-    });
+        amount: totalAmount,
+        employeeId,
+        transaction
+      });
+    await prepareOrderForFulfillment(created, { transaction });
     const detailed = await fetchOrderWithDetails(created.order_id, transaction);
     return mapOrderPlain(detailed);
   });
@@ -734,13 +771,17 @@ const createOrderForEmployee = async (employeeId, payload = {}) => {
 const createOrderForAdmin = async (adminId, payload = {}) => {
   await ensureAdminUser(adminId);
   const cartItems = getCartItemsFromPayload(payload);
-  const { orderItemsPayload, totalAmount } = await buildCartOrderDetails(cartItems);
-  let finalTotal = totalAmount;
-  if (typeof payload.override_price !== "undefined" && payload.override_price !== null) {
-    finalTotal = Number(payload.override_price);
-  }
-  if (payload.is_complimentary) {
-    finalTotal = Number(payload.override_price ?? 0);
+    const { orderItemsPayload, totalAmount: itemsSubtotal } = await buildCartOrderDetails(cartItems);
+    const shippingFeeRaw =
+      payload?.shipping_fee ?? payload?.shippingFee ?? payload?.delivery_fee ?? payload?.deliveryFee ?? 0;
+    const shippingFeeNumber = Number(shippingFeeRaw);
+    const deliveryFee = Number.isFinite(shippingFeeNumber) && shippingFeeNumber > 0 ? shippingFeeNumber : 0;
+    let finalTotal = Number((itemsSubtotal + deliveryFee).toFixed(2));
+    if (typeof payload.override_price !== "undefined" && payload.override_price !== null) {
+      finalTotal = Number(payload.override_price);
+    }
+    if (payload.is_complimentary) {
+      finalTotal = Number(payload.override_price ?? 0);
   }
   if (Number.isNaN(finalTotal) || finalTotal < 0) {
     throw new CustomerServiceError("Gia tri don hang khong hop le", 422, "ORDER_TOTAL_INVALID");
@@ -754,15 +795,16 @@ const createOrderForAdmin = async (adminId, payload = {}) => {
         userId: customerId,
         totalAmount: finalTotal,
         status: "confirmed",
-        paymentMethod,
-        createdByEmployeeId: adminId,
-        originalAmount: totalAmount,
-        note: payload.notes,
-        expectedDeliveryTime: payload.expectedDeliveryTime,
-        orderItemsPayload
-      },
-      transaction
-    );
+          paymentMethod,
+          createdByEmployeeId: adminId,
+          originalAmount: itemsSubtotal,
+          note: payload.notes,
+          expectedDeliveryTime: payload.expectedDeliveryTime,
+          orderItemsPayload,
+          deliveryFee
+        },
+        transaction
+      );
     await createCashPaymentRecord({
       orderId: created.order_id,
       paymentMethod,
@@ -770,6 +812,7 @@ const createOrderForAdmin = async (adminId, payload = {}) => {
       employeeId: adminId,
       transaction
     });
+    await prepareOrderForFulfillment(created, { transaction });
     const detailed = await fetchOrderWithDetails(created.order_id, transaction);
     return mapOrderPlain(detailed);
   });
@@ -898,20 +941,54 @@ const listCart = async (userId) => {
 };
 
 const addItemToCart = async (userId, { productId, quantity } = {}) => {
-  const product = await Product.findByPk(productId);
+  const normalizedProductId = Number(productId);
+  if (!Number.isInteger(normalizedProductId) || normalizedProductId <= 0) {
+    throw new CustomerServiceError("Ma san pham khong hop le", 422, "PRODUCT_INVALID");
+  }
+  const product = await Product.findByPk(normalizedProductId);
   if (!product) {
     throw new CustomerServiceError("Khong tim thay mon an", 404, "PRODUCT_NOT_FOUND");
   }
   const cart = await getOrCreateCart(userId);
   const qty = Math.max(1, Number(quantity) || 1);
-  const [item, created] = await CartItem.findOrCreate({
+  const existing = await CartItem.findOne({
     where: { cart_id: cart.cart_id, product_id: product.product_id },
-    defaults: { quantity: qty }
+    paranoid: false
   });
-  if (!created) {
-    await item.update({ quantity: (Number(item.quantity) || 0) + qty });
+  try {
+    if (!existing) {
+      await CartItem.create({
+        cart_id: cart.cart_id,
+        product_id: product.product_id,
+        quantity: qty
+      });
+    } else {
+      if (existing.deleted_at) {
+        await existing.restore();
+        await existing.update({ quantity: qty });
+      } else {
+        await existing.update({ quantity: (Number(existing.quantity) || 0) + qty });
+      }
+    }
+    return listCart(userId);
+  } catch (error) {
+    if (error instanceof UniqueConstraintError) {
+      const retryItem = await CartItem.findOne({
+        where: { cart_id: cart.cart_id, product_id: product.product_id },
+        paranoid: false
+      });
+      if (retryItem) {
+        if (retryItem.deleted_at) {
+          await retryItem.restore();
+          await retryItem.update({ quantity: qty });
+        } else {
+          await retryItem.update({ quantity: (Number(retryItem.quantity) || 0) + qty });
+        }
+        return listCart(userId);
+      }
+    }
+    throw error;
   }
-  return listCart(userId);
 };
 
 const updateCartItemQuantity = async (userId, productId, quantity) => {
@@ -922,7 +999,7 @@ const updateCartItemQuantity = async (userId, productId, quantity) => {
   }
   const qty = Math.max(0, Number(quantity) || 0);
   if (qty <= 0) {
-    await item.destroy();
+    await item.destroy({ force: true });
     return listCart(userId);
   }
   await item.update({ quantity: qty });
@@ -931,13 +1008,13 @@ const updateCartItemQuantity = async (userId, productId, quantity) => {
 
 const removeCartItem = async (userId, productId) => {
   const cart = await getOrCreateCart(userId);
-  await CartItem.destroy({ where: { cart_id: cart.cart_id, product_id: productId } });
+  await CartItem.destroy({ where: { cart_id: cart.cart_id, product_id: productId }, force: true });
   return listCart(userId);
 };
 
 const clearCart = async (userId) => {
   const cart = await getOrCreateCart(userId);
-  await CartItem.destroy({ where: { cart_id: cart.cart_id } });
+  await CartItem.destroy({ where: { cart_id: cart.cart_id }, force: true });
   return listCart(userId);
 };
 
@@ -987,7 +1064,7 @@ const createSupportMessage = async (userId, content) => {
   if (isFallback(replyText) && process.env.OPENAI_API_KEY) {
     try {
       replyText = await generateAIReply({ userId, text, history: [] });
-    } catch {}
+    } catch { }
   }
 
   if (replyText) {
@@ -1039,7 +1116,7 @@ const listMyConversationMessages = async (userId, { limit = 200 } = {}) => {
   }
 
   if (!items) {
-    const legacy = await Message.findAll({ where: { user_id: userId }, order: [["created_at","ASC"]], paranoid: false });
+    const legacy = await Message.findAll({ where: { user_id: userId }, order: [["created_at", "ASC"]], paranoid: false });
     items = legacy.flatMap((m) => {
       const list = [{ chat_message_id: m.message_id * 2 - 1, conversation_id: 0, sender_role: "user", body: m.message, created_at: m.created_at, updated_at: m.updated_at }];
       if (m.reply) {
@@ -1067,7 +1144,7 @@ const listMyConversationMessages = async (userId, { limit = 200 } = {}) => {
 };
 
 const appendMyConversationMessage = async (userId, content) => {
-  await ensureCustomerUser(userId);
+  const user = await ensureCustomerUser(userId);
   let convo = null;
   try {
     convo = await findOrCreateConversation(userId);
@@ -1091,6 +1168,19 @@ const appendMyConversationMessage = async (userId, content) => {
     await Message.create({ user_id: userId, message: body, from_role: 'user', channel: 'web', sent_at: new Date() });
   }
 
+  let summaryRow = null;
+  try {
+    summaryRow = await Message.create({
+      user_id: userId,
+      message: body,
+      from_role: "user",
+      channel: "web",
+      sent_at: new Date()
+    });
+  } catch (error) {
+    if (!isMissingTableError(error)) throw error;
+  }
+
   // Auto/AI reply
   let replyText = generateAutoReplyV2(body);
   const isFallback = (v) => !v || /^cam on ban da lien he/i.test(String(v).toLowerCase());
@@ -1098,7 +1188,7 @@ const appendMyConversationMessage = async (userId, content) => {
     try {
       const history = await listMyConversationMessages(userId, { limit: 50 }).catch(() => []);
       replyText = await generateAIReply({ userId, text: body, history: Array.isArray(history) ? history : [] });
-    } catch {}
+    } catch { }
   }
 
   let botMsg = null;
@@ -1111,7 +1201,30 @@ const appendMyConversationMessage = async (userId, content) => {
     }
   }
 
-  return { user: userMsg ? userMsg.get({ plain: true }) : null, bot: botMsg ? botMsg.get({ plain: true }) : null };
+  if (replyText && summaryRow) {
+    try {
+      await summaryRow.update({ reply: replyText });
+    } catch (error) {
+      if (!isMissingTableError(error)) throw error;
+    }
+  }
+
+  const summaryPlain = summaryRow
+    ? {
+        ...summaryRow.get({ plain: true }),
+        User: {
+          user_id: user.user_id,
+          username: user.username,
+          full_name: user.full_name
+        }
+      }
+    : null;
+
+  return {
+    user: userMsg ? userMsg.get({ plain: true }) : null,
+    bot: botMsg ? botMsg.get({ plain: true }) : null,
+    summary: summaryPlain
+  };
 };
 
 // ===== Auto-reply engine (simple keyword rules) =====

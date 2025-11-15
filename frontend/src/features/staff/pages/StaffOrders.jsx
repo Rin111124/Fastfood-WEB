@@ -120,14 +120,39 @@ const StaffOrders = () => {
                     <td>
                       <span className="badge bg-light text-dark border text-capitalize">{order.status}</span>
                     </td>
-                    <td>{formatCurrency(order.total_amount)}</td>
+                    <td>
+                      <div className="d-flex flex-column">
+                        <span>{formatCurrency(order.total_amount)}</span>
+                        {typeof order.delivery_fee !== 'undefined' && (
+                          <small className="text-muted">
+                            Phi ship: {formatCurrency(Number(order.delivery_fee || 0))}
+                          </small>
+                        )}
+                      </div>
+                    </td>
                     <td style={{ minWidth: '16rem' }}>
                       <ul className="list-unstyled mb-0 small">
                         {order.items?.map((item) => (
                           <li key={`${order.order_id}-${item.order_item_id}`}>
-                            {item.quantity}x {item.Product?.name || 'San pham'}
+                            {item.quantity}x {item.Product?.name || 'San pham'}{' '}
+                            <span className="text-muted">({formatCurrency(item.price)})</span>
                           </li>
                         )) || <li className="text-muted">Chua co chi tiet</li>}
+                        <li className="mt-2 text-muted">
+                          Tien hang:{' '}
+                          {formatCurrency(
+                            order.items_subtotal !== undefined
+                              ? order.items_subtotal
+                              : (order.items || []).reduce(
+                                  (sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0),
+                                  0
+                                )
+                          )}
+                        </li>
+                        <li className="text-muted">
+                          Phi ship: {formatCurrency(Number(order.delivery_fee || 0))}
+                        </li>
+                        <li className="fw-semibold">Tong: {formatCurrency(order.total_amount)}</li>
                       </ul>
                     </td>
                     <td className="text-end" style={{ width: '14rem' }}>

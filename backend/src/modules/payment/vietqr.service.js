@@ -4,9 +4,9 @@ import crypto from "crypto";
 import fetch from "node-fetch";
 import db from "../../models/index.js";
 import {
-  assignOrderToOnDutyStaff,
   clearCustomerCart,
-  recordPaymentActivity
+  recordPaymentActivity,
+  prepareOrderForFulfillment
 } from "../order/orderFulfillment.service.js";
 import { emitToStaff, emitToUser } from "../../realtime/io.js";
 import { preparePendingOrderPayload, createOrderFromPendingPayload } from "./pendingOrder.helper.js";
@@ -336,7 +336,7 @@ const markPaymentAsSuccess = async (payment, { source = "unknown", metadata = {}
     }
     if (!["paid", "completed"].includes(order.status)) {
       await order.update({ status: "paid", payment_method: order.payment_method || "vietqr" }, { transaction: t });
-      await assignOrderToOnDutyStaff(order, { transaction: t });
+      await prepareOrderForFulfillment(order, { transaction: t });
     }
     await recordPaymentActivity(order, "vietqr", {
       paymentId: payment.payment_id,

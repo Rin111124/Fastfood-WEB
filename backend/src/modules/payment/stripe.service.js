@@ -3,9 +3,9 @@
 import Stripe from "stripe";
 import db from "../../models/index.js";
 import {
-  assignOrderToOnDutyStaff,
   clearCustomerCart,
-  recordPaymentActivity
+  recordPaymentActivity,
+  prepareOrderForFulfillment
 } from "../order/orderFulfillment.service.js";
 import { emitToStaff, emitToUser } from "../../realtime/io.js";
 import { preparePendingOrderPayload, createOrderFromPendingPayload } from "./pendingOrder.helper.js";
@@ -167,7 +167,7 @@ const handleStripePaymentSuccess = async (paymentIntentId, payload = {}) => {
         if (!["paid", "completed"].includes(order.status)) {
           await order.update({ status: "paid" }, { transaction: t });
         }
-        await assignOrderToOnDutyStaff(order, { transaction: t });
+        await prepareOrderForFulfillment(order, { transaction: t });
         await recordPaymentActivity(order, "stripe", {
           paymentId: payment.payment_id,
           txn_ref: payment.txn_ref
@@ -212,4 +212,4 @@ const handleStripeWebhook = async (signature, rawBody) => {
   return event;
 };
 
-export { StripeServiceError, createStripePaymentIntent, handleStripeWebhook };
+export { StripeServiceError, createStripePaymentIntent, handleStripeWebhook, handleStripePaymentSuccess };

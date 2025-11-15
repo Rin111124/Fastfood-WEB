@@ -352,11 +352,48 @@ const stripeWebhookHandler = async (req, res) => {
   }
 };
 
+// Test endpoint - Trigger payment success manually (development only)
+const testStripePaymentSuccessHandler = async (req, res) => {
+  try {
+    const { paymentIntentId, txnRef } = req.body;
+
+    if (!paymentIntentId && !txnRef) {
+      return res.status(400).json({
+        success: false,
+        message: 'paymentIntentId or txnRef required'
+      });
+    }
+
+    const { handleStripePaymentSuccess } = await import('./stripe.service.js');
+    const id = paymentIntentId || txnRef;
+
+    await handleStripePaymentSuccess(id, {
+      type: 'payment_intent.succeeded',
+      data: { object: { id } }
+    });
+
+    console.log('✅ [TEST] Payment success triggered for:', id);
+
+    return res.json({
+      success: true,
+      message: 'Payment success triggered (TEST MODE)',
+      paymentIntentId: id
+    });
+  } catch (error) {
+    console.error('❌ Test payment error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 export {
   createPaypalOrderHandler,
   paypalReturnHandler,
   paypalCancelHandler,
   paypalWebhookHandler,
   createStripeIntentHandler,
-  stripeWebhookHandler
+  stripeWebhookHandler,
+  testStripePaymentSuccessHandler
 };

@@ -17,7 +17,8 @@ import {
   paypalCancelHandler,
   paypalWebhookHandler,
   createStripeIntentHandler,
-  stripeWebhookHandler
+  stripeWebhookHandler,
+  testStripePaymentSuccessHandler
 } from "./payment.api.controller.js";
 
 const router = express.Router();
@@ -44,6 +45,11 @@ router.post("/paypal/webhook", paypalWebhookHandler);
 // Stripe
 router.post("/stripe/create-intent", requireRoles("customer", "admin"), createStripeIntentHandler);
 router.post("/stripe/webhook", stripeWebhookHandler);
+
+// TEST ONLY - Manually trigger payment success (disable in production)
+if (process.env.NODE_ENV !== 'production') {
+  router.post("/stripe/test-payment-success", requireRoles("admin"), testStripePaymentSuccessHandler);
+}
 
 // COD & VietQR
 router.post("/cod/create", requireRoles("customer", "admin"), createCodHandler);

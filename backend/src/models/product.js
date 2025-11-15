@@ -10,6 +10,10 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: 'other'
     },
+    prep_station_code: {
+      type: DataTypes.STRING(50),
+      allowNull: true
+    },
     price: { type: DataTypes.DECIMAL(12,2), allowNull:false, validate:{ min:0 } },
     image_url: DataTypes.STRING(500),
     image_data: DataTypes.BLOB('long'),
@@ -26,6 +30,7 @@ module.exports = (sequelize, DataTypes) => {
   });
   Product.associate = (models) => {
     Product.belongsTo(models.ProductCategory, { foreignKey:'category_id' });
+    Product.belongsTo(models.KitchenStation, { foreignKey: 'prep_station_code', targetKey: 'code', as: 'station' });
     Product.hasMany(models.CartItem, { foreignKey:'product_id' });
     Product.hasMany(models.OrderItem, { foreignKey:'product_id' });
     Product.hasMany(models.ProductOption, { foreignKey: 'product_id', as: 'options' });

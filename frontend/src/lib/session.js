@@ -37,9 +37,21 @@ const clearSession = () => {
   window.localStorage.removeItem(STORAGE_KEY)
 }
 
+const getToken = () => {
+  const session = readSession()
+  return session?.token || null
+}
+
+const getUser = () => {
+  const session = readSession()
+  return session?.user || null
+}
+
 export {
   STORAGE_KEY,
   readSession,
   persistSession,
-  clearSession
+  clearSession,
+  getToken,
+  getUser
 }

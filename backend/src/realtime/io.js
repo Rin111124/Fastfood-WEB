@@ -66,10 +66,12 @@ const initSocket = (httpServer, { allowedOrigins = new Set(), allowAllInDev = tr
   io.on('connection', (socket) => {
     const userId = socket?.data?.auth?.user_id
     const role = socket?.data?.auth?.role
+    const staffCount = getRoomSize('staff')
     console.log('Socket connected', { id: socket.id, userId, role })
+    console.log(`📊 Staff room size: ${staffCount}`)
 
     // Broadcast staff presence count
-    io.emit('presence:staff-count', { count: getRoomSize('staff') })
+    io.emit('presence:staff-count', { count: staffCount })
 
     // Typing relay
     socket.on('support:typing', (payload = {}) => {
@@ -89,7 +91,11 @@ const initSocket = (httpServer, { allowedOrigins = new Set(), allowAllInDev = tr
     socket.on('disconnect', (reason) => {
       console.log('Socket disconnected', { id: socket.id, reason })
       // Update presence count when staff leaves
-      setTimeout(() => io.emit('presence:staff-count', { count: getRoomSize('staff') }), 0)
+      setTimeout(() => {
+        const staffCount = getRoomSize('staff')
+        console.log(`📊 Staff room size after disconnect: ${staffCount}`)
+        io.emit('presence:staff-count', { count: staffCount })
+      }, 0)
     })
   })
 
@@ -98,8 +104,16 @@ const initSocket = (httpServer, { allowedOrigins = new Set(), allowAllInDev = tr
 
 const getIO = () => io
 
-const emitToStaff = (event, payload) => {
+const emitToStaff = (event, payload, targetStaffId = null) => {
   if (!io) return
+
+  // If specific staff ID provided, emit to that user's room
+  if (targetStaffId) {
+    io.to(`user:${targetStaffId}`).emit(event, payload)
+    return
+  }
+
+  // Otherwise broadcast to all staff
   io.to('staff').emit(event, payload)
 }
 

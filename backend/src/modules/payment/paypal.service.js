@@ -3,9 +3,9 @@
 import paypal from "@paypal/checkout-server-sdk";
 import db from "../../models/index.js";
 import {
-  assignOrderToOnDutyStaff,
   clearCustomerCart,
-  recordPaymentActivity
+  recordPaymentActivity,
+  prepareOrderForFulfillment
 } from "../order/orderFulfillment.service.js";
 import { preparePendingOrderPayload, createOrderFromPendingPayload } from "./pendingOrder.helper.js";
 
@@ -184,7 +184,7 @@ const markPaymentAsSuccess = async (paypalOrderId, capturePayload = {}) => {
         if (!["paid", "completed"].includes(order.status)) {
           await order.update({ status: "paid" }, { transaction: t });
         }
-        await assignOrderToOnDutyStaff(order, { transaction: t });
+        await prepareOrderForFulfillment(order, { transaction: t });
         await recordPaymentActivity(order, "paypal", {
           paymentId: payment.payment_id,
           txn_ref: payment.txn_ref

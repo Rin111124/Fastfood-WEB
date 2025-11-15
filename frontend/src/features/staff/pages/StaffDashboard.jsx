@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import clsx from 'clsx'
 import AdminStatusAlert from '../../../components/admin/AdminStatusAlert'
@@ -7,6 +7,7 @@ import OrdersTable from '../../../components/dashboard/OrdersTable'
 import Spinner from '../../../components/common/Spinner'
 import apiFetch from '../../../services/apiClient'
 import { formatDate, formatNumber } from '../../../utils/format'
+import useSocket, { useSocketEvent } from '../../../hooks/useSocket'
 import '../../../styles/dashboard.css'
 
 const defaultDashboard = {
@@ -102,6 +103,48 @@ const StaffDashboard = () => {
     }
   }
 
+  // Socket.IO for realtime updates
+  const { socket, connected } = useSocket({ autoConnect: true })
+
+  // Handle new order assigned
+  const handleOrderAssigned = useCallback((data) => {
+    console.log('🆕 New order assigned:', data)
+    const staffId = String(data.staff_id || '')
+    const currentStaffId = selectedStaffId || myStaffId
+
+    // Only reload if this order is for current staff
+    if (staffId === currentStaffId) {
+      setStatusMessage(`Don hang #${data.order_id} moi duoc giao cho ban!`)
+      setStatusType('success')
+      // Reload dashboard after short delay
+      setTimeout(() => loadStaffData(currentStaffId), 500)
+    }
+  }, [selectedStaffId, myStaffId])
+
+  // Handle KDS tasks created (all staff see this)
+  const handleKdsTasksCreated = useCallback((data) => {
+    console.log('🍳 New KDS tasks:', data)
+    setStatusMessage(`Don hang #${data.order_id} can chuan bi tai: ${data.station_codes?.join(', ')}`)
+    setStatusType('info')
+    // Auto-clear after 5s
+    setTimeout(() => setStatusMessage(''), 5000)
+  }, [])
+
+  // Handle order status updates
+  const handleOrderUpdated = useCallback((data) => {
+    console.log('🔄 Order updated:', data)
+    const currentStaffId = selectedStaffId || myStaffId
+    if (currentStaffId) {
+      // Reload to get fresh data
+      loadStaffData(currentStaffId)
+    }
+  }, [selectedStaffId, myStaffId])
+
+  // Register socket listeners
+  useSocketEvent('order:assigned', handleOrderAssigned, socket)
+  useSocketEvent('kds:tasks:created', handleKdsTasksCreated, socket)
+  useSocketEvent('orders:payment-updated', handleOrderUpdated, socket)
+
   useEffect(() => {
     if (isAdmin) {
       loadStaffList()
@@ -121,7 +164,11 @@ const StaffDashboard = () => {
       <div className="glass-card p-4 p-lg-5 mb-4 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-4">
         <div>
           <p className="dashboard-section-title text-muted mb-2">GOC VAN HANH</p>
-          <h1 className="h4 fw-bold mb-2">Xin chao {session?.user?.full_name || session?.user?.username || 'Nhan vien'}</h1>
+          <h1 className="h4 fw-bold mb-2">
+            Xin chao {session?.user?.full_name || session?.user?.username || 'Nhan vien'}
+            {connected && <span className="badge bg-success ms-2 fs-6">🟢 Trực tuyến</span>}
+            {!connected && <span className="badge bg-secondary ms-2 fs-6">⚫ Ngoại tuyến</span>}
+          </h1>
           <p className="text-secondary mb-0">
             Theo doi trang thai don hang, lich truc va yeu cau tu khach hang ngay tai day.
           </p>

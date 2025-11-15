@@ -85,3 +85,13 @@ Routes:
 6. `/api/payments/vietqr/create` also accepts an `orderPayload` (with `userId`, `items` array of `{ productId, quantity, price }`, `paymentMethod`, `note`, and optional `expectedDeliveryTime`); if you send that instead of an existing `orderId`, the backend retains the details so that once the webhook confirms payment it automatically creates the order, marks it `paid`, assigns the on-duty staff, and notifies the POS/KDS. The service will also reuse the most recent initiated payment for the same order so duplicate `create` calls (e.g., React Strict Mode) do not spawn multiple transactions while the QR is still valid.
 
 Admin users can reconcile transactions through `GET /api/admin/payments` and update statuses via `PATCH /api/admin/payments/:paymentId/status`.
+
+### Station-based fulfillment & workforce
+
+The backend now keeps track of who is on-duty (and at which station) so orders can be fan-out to the right KDS screens.
+
+- Staff members check in/out through `/api/staff/timeclock/check-in|check-out` and may pause their shift with `/api/staff/timeclock/break`. When a station still has pending tickets and no backup staff, the API blocks checkout/break until tickets are transferred.
+- Every paid/confirmed order automatically creates `station_tasks` for each `order_item`. Products can be tagged with a `prep_station_code` (see `/api/admin/products` payload). If unspecified, the service infers the station by `food_type` (burgers -> `grill`, snacks -> `fryer`, drinks -> `drink`, otherwise `pack`).
+- Station dashboards consume `/api/staff/kds/stations/:stationCode/tasks` (optional `includeCompletedMinutes`, `limit` query params) and can monitor overload through `/api/staff/kds/stations/:stationCode/load`. Packer/expo screens use `/api/staff/kds/packing-board`.
+- Touching a ticket (acknowledge / start / complete / cancel) is done via `POST /api/staff/kds/stations/:stationCode/tasks/:taskId/status` with body `{ "status": "in_progress" }`, etc. WebSocket events (`kds:tasks:created`, `kds:tasks:updated`) keep every KDS screen in sync in realtime.
+- Load balancing: when `pending` tickets for a station exceed the defined `capacity_per_batch * 2` (default `6` if unset), the `/load` endpoint returns `overloaded: true` so the supervisor UI can flash the station and re-route staff.

@@ -12,6 +12,15 @@ import {
   getStaffPerformance,
   listShiftsForStaff
 } from "./staff.service.js";
+import {
+  checkInStaff,
+  checkOutStaff,
+  setStaffBreakStatus,
+  listStationTasks,
+  updateStationTaskStatus,
+  listPackingBoard,
+  getStationLoadSnapshot
+} from "./staff.kds.service.js";
 import db from "../../models/index.js";
 import { emitToUser as emitToUserRealtime } from "../../realtime/io.js";
 
@@ -206,6 +215,94 @@ const staffShiftsHandler = async (req, res) => {
   }
 };
 
+const staffCheckInHandler = async (req, res) => {
+  try {
+    const staffId = await resolveStaffId(req);
+    if (!staffId) {
+      return res.status(404).json({ success: false, message: "Khong tim thay nhan vien phu hop" });
+    }
+    const entry = await checkInStaff(staffId, req.body || {});
+    return res.json({ success: true, data: entry });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+const staffCheckOutHandler = async (req, res) => {
+  try {
+    const staffId = await resolveStaffId(req);
+    if (!staffId) {
+      return res.status(404).json({ success: false, message: "Khong tim thay nhan vien phu hop" });
+    }
+    const entry = await checkOutStaff(staffId);
+    return res.json({ success: true, data: entry });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+const staffBreakHandler = async (req, res) => {
+  try {
+    const staffId = await resolveStaffId(req);
+    if (!staffId) {
+      return res.status(404).json({ success: false, message: "Khong tim thay nhan vien phu hop" });
+    }
+    const action = typeof req.body?.action === "string" ? req.body.action.toLowerCase() : "start";
+    const entry = await setStaffBreakStatus(staffId, action === "end" ? "end" : "start");
+    return res.json({ success: true, data: entry });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+const staffStationTasksHandler = async (req, res) => {
+  try {
+    const tasks = await listStationTasks(req.params.stationCode, {
+      includeCompletedWindowMinutes: req.query.includeCompletedMinutes
+        ? Number(req.query.includeCompletedMinutes)
+        : 5,
+      limit: req.query.limit ? Number(req.query.limit) : 50
+    });
+    const load = await getStationLoadSnapshot(req.params.stationCode);
+    return res.json({ success: true, data: { tasks, load } });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+const staffStationLoadHandler = async (req, res) => {
+  try {
+    const load = await getStationLoadSnapshot(req.params.stationCode);
+    return res.json({ success: true, data: load });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+const staffStationTaskStatusHandler = async (req, res) => {
+  try {
+    const staffId = await resolveStaffId(req);
+    if (!staffId) {
+      return res.status(404).json({ success: false, message: "Khong tim thay nhan vien phu hop" });
+    }
+    const taskId = Number(req.params.taskId);
+    const updated = await updateStationTaskStatus(taskId, req.body?.status, staffId);
+    return res.json({ success: true, data: updated });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+const staffPackingBoardHandler = async (req, res) => {
+  try {
+    const limitOrders = req.query.limit ? Number(req.query.limit) : 20;
+    const board = await listPackingBoard({ limitOrders });
+    return res.json({ success: true, data: board });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
 export {
   staffDashboardHandler,
   staffOrdersHandler,
@@ -217,7 +314,14 @@ export {
   staffInventoryHandler,
   staffUpdateInventoryHandler,
   staffPerformanceHandler,
-  staffShiftsHandler
+  staffShiftsHandler,
+  staffCheckInHandler,
+  staffCheckOutHandler,
+  staffBreakHandler,
+  staffStationTasksHandler,
+  staffStationLoadHandler,
+  staffStationTaskStatusHandler,
+  staffPackingBoardHandler
 };
 
 

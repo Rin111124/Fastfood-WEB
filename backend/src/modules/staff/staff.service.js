@@ -98,11 +98,19 @@ const listAssignedOrders = async (staffId, { status } = {}) => {
   return orders.map((order) => {
     const plain = order.get({ plain: true });
     if (Array.isArray(plain.OrderItems)) {
-      plain.OrderItems = plain.OrderItems.map((item) => ({
+      plain.items = plain.OrderItems.map((item) => ({
         ...item,
         Product: item.Product ? mapProductImage(item.Product) : null
       }));
+    } else {
+      plain.items = [];
     }
+    delete plain.OrderItems;
+    const itemsSubtotal = plain.items.reduce(
+      (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0),
+      0
+    );
+    plain.items_subtotal = Number(itemsSubtotal.toFixed(2));
     return plain;
   });
 };

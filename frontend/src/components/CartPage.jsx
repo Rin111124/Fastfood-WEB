@@ -87,6 +87,7 @@ const CartPage = () => {
     try {
       const orderPayload = {
         payment_method: paymentMethod,
+        shipping_fee: method === 'delivery' ? shipping : 0,
         items: items.map((it) => ({
           productId: it.product_id,
           quantity: it.quantity,
@@ -99,19 +100,12 @@ const CartPage = () => {
         throw new Error('Khong tao duoc don hang.')
       }
 
-      if (paymentMethod === 'cod') {
-        await customerApi.createCodPayment(orderId)
-        alert('Da tao don thanh toan COD. Vui long thanh toan khi nhan hang.')
-        navigate('/customer', { replace: true })
-        setCheckingOut(false)
-        return
-      }
-
       const routeMap = {
         vnpay: `/checkout/vnpay/${orderId}`,
         vietqr: `/checkout/vietqr/${orderId}`,
         paypal: `/checkout/paypal/${orderId}`,
-        stripe: `/checkout/stripe/${orderId}`
+        stripe: `/checkout/stripe/${orderId}`,
+        cod: `/checkout/cod/${orderId}`
       }
       const targetRoute = routeMap[paymentMethod] || `/checkout/vietqr/${orderId}`
       navigate(targetRoute)

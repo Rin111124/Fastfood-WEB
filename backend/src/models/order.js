@@ -4,6 +4,11 @@ module.exports = (sequelize, DataTypes) => {
     order_id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement:true, primaryKey:true },
     user_id: DataTypes.INTEGER.UNSIGNED,
     total_amount: { type: DataTypes.DECIMAL(12,2), allowNull:false },
+    delivery_fee: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: false,
+      defaultValue: 0
+    },
     status: {
       type: DataTypes.ENUM(
         'pending',

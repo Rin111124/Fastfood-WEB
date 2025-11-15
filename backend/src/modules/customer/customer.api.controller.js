@@ -234,7 +234,7 @@ const postMyConversationMessageHandler = async (req, res) => {
     if (!content) return res.status(400).json({ success: false, message: "Noi dung khong duoc de trong" });
     const result = await appendMyConversationMessage(userId, content);
     // notify staff new user message
-    emitToStaff('support:new', { user_id: userId, preview: content });
+    emitToStaff('support:new', result?.summary || { user_id: userId, preview: content });
     // notify user if bot replied
     if (result?.bot) emitToUser(userId, 'support:replied', { message_id: 0, reply: result.bot.body });
     return res.status(201).json({ success: true, data: result });

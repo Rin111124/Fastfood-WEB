@@ -12,10 +12,11 @@ import { ensureProductImageColumns, ensureNewsImageColumns } from "../../utils/s
 import { isMissingColumnError, isMissingTableError } from "../../utils/dbErrors.js";
 import { createOrderFromPendingPayload } from "../payment/pendingOrder.helper.js";
 import {
-  assignOrderToOnDutyStaff,
   clearCustomerCart,
-  recordPaymentActivity
+  recordPaymentActivity,
+  prepareOrderForFulfillment
 } from "../order/orderFulfillment.service.js";
+import { sanitizeStationCode } from "../order/stationTask.helper.js";
 
 const {
   User,
@@ -544,6 +545,16 @@ const prepareProductPayload = (payload = {}, { supportsBlob }) => {
   if (prepared.image_data === null) {
     prepared.image_url = null;
   }
+  if (
+    Object.prototype.hasOwnProperty.call(prepared, "prep_station_code") ||
+    Object.prototype.hasOwnProperty.call(prepared, "prepStationCode") ||
+    Object.prototype.hasOwnProperty.call(prepared, "stationCode")
+  ) {
+    const stationSource = prepared.prep_station_code || prepared.prepStationCode || prepared.stationCode;
+    prepared.prep_station_code = sanitizeStationCode(stationSource);
+    delete prepared.prepStationCode;
+    delete prepared.stationCode;
+  }
 
   return prepared;
 };
@@ -919,7 +930,7 @@ const updatePaymentStatus = async (paymentId, status, actorId) => {
           if (order.status !== "paid" && order.status !== "completed") {
             await order.update({ status: "paid" }, { transaction: t });
           }
-          await assignOrderToOnDutyStaff(order, { transaction: t });
+          await prepareOrderForFulfillment(order, { transaction: t });
           await recordPaymentActivity(order, payment.provider || "manual", {
             paymentId: payment.payment_id,
             txn_ref: payment.txn_ref
