@@ -2,9 +2,10 @@
   "name": "nodejs",
   "version": "1.0.0",
   "description": "backend nodejs",
-  "main": "server.js",
+  "main": "src/server.js",
+  "type": "module",
   "scripts": {
-    "start": "nodemon --exec ./node_modules/.bin/babel-node src/server.js",
+    "start": "node src/server.js",
     "dev": "nodemon --exec ./node_modules/.bin/babel-node src/server.js"
   },
   "author": "Linh",
