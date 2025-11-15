@@ -3,9 +3,8 @@
   "version": "1.0.0",
   "description": "backend nodejs",
   "main": "src/server.js",
-  "type": "module",
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node -r @babel/register src/server.js",
     "dev": "nodemon --exec ./node_modules/.bin/babel-node src/server.js"
   },
   "author": "Linh",
