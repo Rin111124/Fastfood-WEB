@@ -159,6 +159,8 @@ const maybeServeFrontend = () => {
     candidates.push(process.env.FRONTEND_STATIC_ROOT);
   }
 
+  // Try multiple possible frontend build locations
+  candidates.push(path.join(__dirname, "..", "..", "frontend", "dist"));
   candidates.push(path.join(__dirname, "..", "..", "FE", "dist"));
   candidates.push(path.join(__dirname, "public"));
 
@@ -170,7 +172,7 @@ const maybeServeFrontend = () => {
 
   if (!targetRoot) {
     console.warn(
-      "No frontend build found. Run `npm run build` inside the FE project and set FRONTEND_STATIC_ROOT if needed."
+      "No frontend build found. Run `npm run build` inside the frontend project and set FRONTEND_STATIC_ROOT if needed."
     );
     return;
   }

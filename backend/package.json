@@ -1,11 +1,15 @@
 {
   "name": "nodejs",
   "version": "1.0.0",
+  "type": "module",
   "description": "backend nodejs",
   "main": "src/server.js",
   "scripts": {
-    "start": "node -r @babel/register src/server.js",
-    "dev": "nodemon --exec ./node_modules/.bin/babel-node src/server.js"
+    "start": "node src/server.js",
+    "dev": "nodemon --exec ./node_modules/.bin/babel-node src/server.js",
+    "build": "npm run build:frontend",
+    "build:frontend": "cd ../frontend && npm install && npm run build",
+    "migrate": "node run-migrations.js"
   },
   "author": "Linh",
   "license": "ISC",
