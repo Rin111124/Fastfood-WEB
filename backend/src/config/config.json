@@ -1,32 +1,38 @@
 {
   "development": {
     "username": "root",
-    "password": null,
-    "database": "FastFood_Management",
-    "host": "127.0.0.1",
+    "password": "VRZXhoeswidfXDVxULrhBATOItKViKkQ",
+    "database": "railway",
+    "host": "mysql.railway.internal",
+    "port": 3306,
     "dialect": "mysql",
     "pool": {
       "max": 5,
       "min": 0,
       "acquire": 30000,
       "idle": 10000
-    },
-    "dialectOptions": {
-      "connectTimeout": 20000
     }
   },
   "test": {
     "username": "root",
-    "password": null,
-    "database": "database_test",
-    "host": "127.0.0.1",
+    "password": "VRZXhoeswidfXDVxULrhBATOItKViKkQ",
+    "database": "railway",
+    "host": "mysql.railway.internal",
+    "port": 3306,
     "dialect": "mysql"
   },
   "production": {
     "username": "root",
-    "password": null,
-    "database": "database_production",
-    "host": "127.0.0.1",
-    "dialect": "mysql"
+    "password": "VRZXhoeswidfXDVxULrhBATOItKViKkQ",
+    "database": "railway",
+    "host": "mysql.railway.internal",
+    "port": 3306,
+    "dialect": "mysql",
+    "pool": {
+      "max": 10,
+      "min": 0,
+      "acquire": 30000,
+      "idle": 10000
+    }
   }
 }
