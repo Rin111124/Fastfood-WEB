@@ -1,4 +1,5 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config();
 import db from "../models/index.js";
 
 let isConnected = false;
